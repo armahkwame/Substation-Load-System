@@ -92,7 +92,50 @@ tr:last-child td{border-bottom:none}
 <div id="root"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <script>
-const SK='sls_v8';
+const SK='sls_v10'; // feeder-type schema
+
+// ── FEEDER METADATA ─────────────────────────────────────────────────────
+// type: '33inc'=33KV incomer, '33out'=33KV outgoing, '11trafo'=11KV trafo, '11out'=11KV outgoing
+const FEEDER_META={
+  'INCOMER 1_8F1': {type:'33inc',  voltage:33},
+  'INCOMER 2_8F2': {type:'33inc',  voltage:33},
+  'INCOMER 3_8F3': {type:'33inc',  voltage:33},
+  'INCHABAN 1':    {type:'33out',  voltage:33},
+  'INCHABAN 2':    {type:'33out',  voltage:33},
+  'FREEZONE 1':    {type:'33out',  voltage:33},
+  'FREEZONE 2':    {type:'33out',  voltage:33},
+  'TADI 1':        {type:'33out',  voltage:33},
+  'TADI 2':        {type:'33out',  voltage:33},
+  'APOWA 1':       {type:'33out',  voltage:33},
+  'APOWA 2':       {type:'33out',  voltage:33},
+  'TRAFO 1 (33KV)':{type:'33out',  voltage:33},
+  'TRAFO 2 (33KV)':{type:'33out',  voltage:33},
+  'TRAFO 1 (11KV)':{type:'11trafo',voltage:11},
+  'TRAFO 2 (11KV)':{type:'11trafo',voltage:11},
+  'FDR A55':       {type:'11out',  voltage:11},
+  'FDR A31':       {type:'11out',  voltage:11},
+  'FDR A NTANKOFUL':{type:'11out', voltage:11},
+  'FDR A44':       {type:'11out',  voltage:11},
+  'FDR A10':       {type:'11out',  voltage:11},
+  'FDR A13':       {type:'11out',  voltage:11},
+  'FDR A41':       {type:'11out',  voltage:11},
+  'FDR A57':       {type:'11out',  voltage:11},
+  'FDR A09':       {type:'11out',  voltage:11},
+};
+
+// Get last recorded KV for incomers or trafos on the same date
+function getRefKV(sub,date,voltLevel){
+  const refType=voltLevel===33?['33inc']:['11trafo'];
+  const matches=DB.submissions.filter(s=>
+    s.sub===sub && s.date===date && refType.includes((FEEDER_META[s.feeder]||{}).type) && s.kv
+  );
+  if(!matches.length)return voltLevel; // fallback to nominal
+  return matches[matches.length-1].kv;
+}
+
+// Calculate Imax and MW
+function calcImax(ir,iy,ib){return Math.max(+ir||0,+iy||0,+ib||0);}
+function calcMW(kv,imax){return+(Math.sqrt(3)*kv*(+imax)*0.96/1000).toFixed(3);}
 const SHEETS_URL='https://script.google.com/macros/s/AKfycby6CNRiddA3o-ijPHdOT4vc3UBN127h06cAwwygC-tL3LJt6aPeG-iiaDeQ9AU35p7R7w/exec';
 const ECG_LOGO='data:image/png;base64,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';
 
@@ -165,16 +208,20 @@ function entryDateTime(s){
 
 async function uploadEntry(s){
   const{date,time}=entryDateTime(s);
-  const p=panelVals(s);
-  const{imb33,imb11}=panelImbalance(s);
   await fetch(SHEETS_URL,{
     method:'POST',mode:'no-cors',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({
-      ...s,date,time,
-      r33:p.r33,y33:p.y33,b33:p.b33,kv33:p.kv33,
-      r11:p.r11,y11:p.y11,b11:p.b11,kv11:p.kv11,
-      imb33,imb11
+      id:s.id, date, time, user:s.user,
+      district:s.district, sub:s.sub, feeder:s.feeder,
+      feederType:s.feederType||feederType(s.feeder),
+      kv:s.kv!=null?s.kv:'',
+      ir:s.ir, iy:s.iy, ib:s.ib,
+      imax:s.imax, mw:s.mw!=null?s.mw:'',
+      tap:s.tap!=null?s.tap:'',
+      oiltemp:s.oiltemp!=null?s.oiltemp:'',
+      windtemp:s.windtemp!=null?s.windtemp:'',
+      remarks:s.remarks||''
     })
   });
 }
@@ -232,26 +279,67 @@ function startSyncEngine(){
 }
 const DEMO_TS=['2026-06-08T06:00:00.000Z','2026-06-08T12:00:00.000Z','2026-06-08T18:00:00.000Z','2026-06-09T06:00:00.000Z','2026-06-09T12:00:00.000Z','2026-06-09T18:00:00.000Z','2026-06-10T06:00:00.000Z','2026-06-10T12:00:00.000Z'];
 const DEF={
-  users:[{id:'EK',pw:'ek123',role:'user',districts:['TAKORADI']},{id:'JA',pw:'ja123',role:'user',districts:['TAKORADI','TARKWA']},{id:'admin',pw:'admin2026',role:'admin',districts:[]}],
-  districts:['TAKORADI','TARKWA','PRESTEA','AXIM'],
-  subs:{'TAKORADI':['STATION A','STATION B','ANAJI'],'TARKWA':['TARKWA MAIN','BOGOSO'],'PRESTEA':['PRESTEA MAIN'],'AXIM':['AXIM MAIN']},
-  feeders:{'STATION A':['A55','A66','A77'],'STATION B':['B11','B22'],'ANAJI':['AN1','AN2'],'TARKWA MAIN':['TK1','TK2'],'BOGOSO':['BG1'],'PRESTEA MAIN':['PM1'],'AXIM MAIN':['AX1']},
-  submissions:[
-    {id:'d0',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:185,y:190,b:182,kv:34.5,remarks:'Morning reading',ts:'2026-06-08T06:00:00.000Z'},
-    {id:'d1',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:210,y:215,b:205,kv:34.3,remarks:'',ts:'2026-06-08T12:00:00.000Z'},
-    {id:'d2',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:195,y:198,b:192,kv:34.4,remarks:'',ts:'2026-06-08T18:00:00.000Z'},
-    {id:'d3',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:180,y:188,b:175,kv:34.2,remarks:'',ts:'2026-06-09T06:00:00.000Z'},
-    {id:'d4',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:225,y:230,b:218,kv:34.1,remarks:'Peak load',ts:'2026-06-09T12:00:00.000Z'},
-    {id:'d5',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:200,y:204,b:198,kv:34.5,remarks:'',ts:'2026-06-09T18:00:00.000Z'},
-    {id:'d6',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:178,y:182,b:176,kv:34.6,remarks:'',ts:'2026-06-10T06:00:00.000Z'},
-    {id:'d7',user:'EK',district:'TAKORADI',sub:'STATION A',feeder:'A55',r:220,y:195,b:215,kv:34.0,remarks:'Imbalance noted',ts:'2026-06-10T12:00:00.000Z'},
-    {id:'d8',user:'JA',district:'TAKORADI',sub:'STATION A',feeder:'A66',r:95,y:98,b:92,kv:34.5,remarks:'',ts:'2026-06-08T12:00:00.000Z'},
-    {id:'d9',user:'JA',district:'TAKORADI',sub:'STATION A',feeder:'A66',r:110,y:88,b:105,kv:34.3,remarks:'Y phase low',ts:'2026-06-09T12:00:00.000Z'},
-    {id:'d10',user:'JA',district:'TARKWA',sub:'TARKWA MAIN',feeder:'TK1',r:142,y:145,b:140,kv:33.0,remarks:'',ts:'2026-06-08T18:00:00.000Z'},
-    {id:'d11',user:'JA',district:'TARKWA',sub:'TARKWA MAIN',feeder:'TK1',r:158,y:160,b:155,kv:32.8,remarks:'',ts:'2026-06-09T18:00:00.000Z'},
-    {id:'d12',user:'EK',district:'TAKORADI',sub:'STATION B',feeder:'B11',r:75,y:78,b:72,kv:34.5,remarks:'',ts:'2026-06-09T06:00:00.000Z'},
-  ]
+  users:[
+    {id:'EK',pw:'ek123',role:'user',name:'EK',phone:'',districts:['SEKONDI']},
+    {id:'admin',pw:'admin2026',role:'admin',name:'Admin',phone:'',districts:[]}
+  ],
+  districts:['SEKONDI'],
+  subs:{'SEKONDI':['STATION A BSP']},
+  subVoltage:{'STATION A BSP':'33+11'},
+  feeders:{'STATION A BSP':[
+    'INCHABAN 1','FREEZONE 1','INCOMER 2_8F2','INCOMER 1_8F1','INCHABAN 2',
+    'INCOMER 3_8F3','TADI 1','APOWA 1','FREEZONE 2','TADI 2','APOWA 2',
+    'TRAFO 1','TRAFO 2',
+    'FDR A55','FDR A31','FDR A NTANKOFUL','FDR A44','FDR A10',
+    'FDR A13','FDR A41','FDR A57','FDR A09'
+  ]},
+  // 33KV section ends after APOWA 2; 11KV section = TRAFO 1, TRAFO 2, then FDR A55…A09
+  submissions:[]
 };
+
+// ── Feeder type catalogue ──
+// 33KV_INCOMER: KV + IR,IY,IB → Imax,MW
+// 33KV_OUT:     IR,IY,IB → Imax,MW (uses latest INCOMER KV)
+// 11KV_TRAFO:   KV + IR,IY,IB → Imax,MW + TAP(0-19) + OilTemp + WindTemp
+// 11KV_OUT:     IR,IY,IB → Imax,MW (uses latest TRAFO KV)
+const FEEDER_TYPES={
+  'INCOMER 1_8F1':'33KV_INCOMER','INCOMER 2_8F2':'33KV_INCOMER','INCOMER 3_8F3':'33KV_INCOMER',
+  'INCHABAN 1':'33KV_OUT','INCHABAN 2':'33KV_OUT',
+  'FREEZONE 1':'33KV_OUT','FREEZONE 2':'33KV_OUT',
+  'TADI 1':'33KV_OUT','TADI 2':'33KV_OUT',
+  'APOWA 1':'33KV_OUT','APOWA 2':'33KV_OUT',
+  'TRAFO 1':'11KV_TRAFO','TRAFO 2':'11KV_TRAFO',
+  'FDR A55':'11KV_OUT','FDR A31':'11KV_OUT','FDR A NTANKOFUL':'11KV_OUT',
+  'FDR A44':'11KV_OUT','FDR A10':'11KV_OUT','FDR A13':'11KV_OUT',
+  'FDR A41':'11KV_OUT','FDR A57':'11KV_OUT','FDR A09':'11KV_OUT'
+};
+
+function feederType(f){return FEEDER_TYPES[f]||'33KV_OUT';}
+function is33Incomer(f){return feederType(f)==='33KV_INCOMER';}
+function is33Out(f){return feederType(f)==='33KV_OUT';}
+function is11Trafo(f){return feederType(f)==='11KV_TRAFO';}
+function is11Out(f){return feederType(f)==='11KV_OUT';}
+
+// Get latest KV reading for a given feeder type (for MW calc on outgoing feeders)
+function latestKV(substation, type){
+  const src=type==='33KV'?['33KV_INCOMER']:['11KV_TRAFO'];
+  const rows=DB.submissions
+    .filter(s=>s.sub===substation && src.includes(feederType(s.feeder)) && s.kv)
+    .sort((a,b)=>new Date(b.ts)-new Date(a.ts));
+  return rows.length?rows[0].kv:null;
+}
+
+// Imax = max of IR,IY,IB
+function calcImax(ir,iy,ib){
+  const vals=[ir,iy,ib].map(Number).filter(x=>!isNaN(x)&&x!=='');
+  return vals.length?Math.max(...vals):0;
+}
+
+// MW = √3 × kV × Imax × pf / 1000  (pf = 0.96)
+function calcMW(kv,imax){
+  if(!kv||!imax)return null;
+  return+(Math.sqrt(3)*kv*imax*0.96/1000).toFixed(3);
+}
 
 let DB,SESSION,adminTab='charts',chartInst={},clockTimer=null,selectedTime=null,useCustomTime=false;
 let F_DISTRICT='',F_SUB='',F_FEEDER=''; // persistent chart filter state
@@ -270,30 +358,27 @@ function mount(html){
 function fmt(ts){return new Date(ts).toLocaleString('en-GH',{dateStyle:'short',timeStyle:'short'});}
 function fmtShort(ts){return new Date(ts).toLocaleString('en-GH',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
 function today(){return new Date().toISOString().slice(0,10);}
+function fmtDateDMY(iso){const p=iso.split('-');return `${p[2]}/${p[1]}/${p[0]}`;}
 function pad(n){return String(n).padStart(2,'0');}
-function imbalancePct(r,y,b){const avg=(r+y+b)/3;if(!avg)return 0;return+((Math.max(Math.abs(r-avg),Math.abs(y-avg),Math.abs(b-avg))/avg)*100).toFixed(1);}
-
-// ── Dual panel helpers: old entries had single r,y,b → treated as 33KV set ──
-function panelVals(s){
-  return{
-    r33:s.r33!==undefined?s.r33:(s.r!==undefined?s.r:''),
-    y33:s.y33!==undefined?s.y33:(s.y!==undefined?s.y:''),
-    b33:s.b33!==undefined?s.b33:(s.b!==undefined?s.b:''),
-    kv33:s.kv33!==undefined?s.kv33:(s.kv!==undefined?s.kv:''),
-    r11:s.r11!==undefined?s.r11:'',
-    y11:s.y11!==undefined?s.y11:'',
-    b11:s.b11!==undefined?s.b11:'',
-    kv11:s.kv11!==undefined?s.kv11:''
-  };
+// ── New schema helpers (feeder-type based) ──
+function isIncomer(s){return (s.feederType||feederType(s.feeder))==='33KV_INCOMER';}
+function isTrafo(s){return (s.feederType||feederType(s.feeder))==='11KV_TRAFO';}
+function isOutgoing(s){const t=s.feederType||feederType(s.feeder);return t==='33KV_OUT'||t==='11KV_OUT';}
+function is33(s){const t=s.feederType||feederType(s.feeder);return t==='33KV_INCOMER'||t==='33KV_OUT';}
+function is11(s){const t=s.feederType||feederType(s.feeder);return t==='11KV_TRAFO'||t==='11KV_OUT';}
+function fTypeLabel(s){
+  const t=s.feederType||feederType(s.feeder);
+  return {'33KV_INCOMER':'33KV Incomer','33KV_OUT':'33KV Outgoing','11KV_TRAFO':'11KV Trafo','11KV_OUT':'11KV Outgoing'}[t]||t;
 }
-function has11kv(s){return s.has11kv!==false;} // default true for old entries
-// Imbalance per panel; returns {imb33, imb11, worst} — 'NA' panels return 0 for imb11, excluded from worst
-function panelImbalance(s){
-  const p=panelVals(s);
-  const imb33=(p.r33!==''&&p.y33!==''&&p.b33!=='')?imbalancePct(+p.r33,+p.y33,+p.b33):0;
-  const is11Numeric=p.r11!==''&&p.r11!=='NA'&&p.y11!==''&&p.y11!=='NA'&&p.b11!==''&&p.b11!=='NA';
-  const imb11=is11Numeric?imbalancePct(+p.r11,+p.y11,+p.b11):0;
-  return{imb33,imb11:is11Numeric?imb11:'NA',worst:is11Numeric?Math.max(imb33,imb11):imb33};
+// Compute totals for a set of submissions (for admin display)
+function computeTotals(rows){
+  let outAmps=0,outMW=0,inAmps=0,inMW=0;
+  rows.forEach(s=>{
+    const imax=+s.imax||0, mw=+s.mw||0;
+    if(isIncomer(s)){inAmps+=imax;inMW+=mw;}
+    else if(isOutgoing(s)){outAmps+=imax;outMW+=mw;}
+  });
+  return{outAmps:+outAmps.toFixed(1),outMW:+outMW.toFixed(3),inAmps:+inAmps.toFixed(1),inMW:+inMW.toFixed(3)};
 }
 function isDark(){return document.documentElement.classList.contains('dark')||window.matchMedia('(prefers-color-scheme:dark)').matches;}
 function chartColors(){return isDark()?{grid:'rgba(255,255,255,0.08)',text:'#8B949E',r:'#85B7EB',y:'#FAC775',b:'#9FE1CB',avg:'#AFA9EC'}:{grid:'rgba(0,0,0,0.06)',text:'#6E7681',r:'#185FA5',y:'#854F0B',b:'#0F6E56',avg:'#534AB7'};}
@@ -421,14 +506,15 @@ function dlCSV(rows,headers,keys,name){
 }
 function exportTrendData(){
   const rows=filteredRows().map(s=>{
-    const p=panelVals(s);const{imb33,imb11}=panelImbalance(s);const{date,time}=entryDateTime(s);
+    const{date,time}=entryDateTime(s);
     return{date,time,user:s.user,district:s.district,sub:s.sub,feeder:s.feeder,
-      r33:p.r33,y33:p.y33,b33:p.b33,kv33:p.kv33,imb33,
-      r11:p.r11,y11:p.y11,b11:p.b11,kv11:p.kv11,imb11,remarks:s.remarks||''};
+      ftype:fTypeLabel(s),kv:s.kv!=null?s.kv:'',ir:s.ir,iy:s.iy,ib:s.ib,
+      imax:s.imax,mw:s.mw!=null?s.mw:'',tap:s.tap!=null?s.tap:'',
+      oiltemp:s.oiltemp!=null?s.oiltemp:'',windtemp:s.windtemp!=null?s.windtemp:'',remarks:s.remarks||''};
   });
   dlCSV(rows,
-    ['Date','Time','User','District','Substation','Feeder','33KV R(A)','33KV Y(A)','33KV B(A)','33KV V(kV)','33KV Imb(%)','11KV R(A)','11KV Y(A)','11KV B(A)','11KV V(kV)','11KV Imb(%)','Remarks'],
-    ['date','time','user','district','sub','feeder','r33','y33','b33','kv33','imb33','r11','y11','b11','kv11','imb11','remarks'],
+    ['Date','Time','User','District','Substation','Feeder','Type','kV','IR','IY','IB','Imax','MW','TAP','Oil Temp','Wind Temp','Remarks'],
+    ['date','time','user','district','sub','feeder','ftype','kv','ir','iy','ib','imax','mw','tap','oiltemp','windtemp','remarks'],
     `load-trend-${F_DISTRICT||F_SUB||F_FEEDER||'all'}-${today()}`);
 }
 function exportFeederSummary(){
@@ -436,38 +522,37 @@ function exportFeederSummary(){
   function avg(arr){return arr.length?(arr.reduce((a,b)=>a+b,0)/arr.length):0;}
   const rows=feeders.map(f=>{
     const fr=DB.submissions.filter(s=>s.feeder===f);
-    const p33=fr.map(s=>panelVals(s)).filter(p=>p.r33!==''&&p.y33!==''&&p.b33!=='');
-    const p11=fr.map(s=>panelVals(s)).filter(p=>p.r11!==''&&p.r11!=='NA'&&p.y11!==''&&p.y11!=='NA'&&p.b11!==''&&p.b11!=='NA');
-    const imbs=fr.map(s=>panelImbalance(s).worst);
     return{
-      feeder:f,district:fr[0]?.district||'',sub:fr[0]?.sub||'',readings:fr.length,
-      avgR33:avg(p33.map(p=>+p.r33)).toFixed(1),avgY33:avg(p33.map(p=>+p.y33)).toFixed(1),avgB33:avg(p33.map(p=>+p.b33)).toFixed(1),avgKv33:avg(p33.map(p=>+p.kv33)).toFixed(2),
-      avgR11:avg(p11.map(p=>+p.r11)).toFixed(1),avgY11:avg(p11.map(p=>+p.y11)).toFixed(1),avgB11:avg(p11.map(p=>+p.b11)).toFixed(1),avgKv11:avg(p11.map(p=>+p.kv11)).toFixed(2),
-      avgImb:avg(imbs).toFixed(1),maxImb:imbs.length?Math.max(...imbs).toFixed(1):'0'
+      feeder:f,type:fr[0]?fTypeLabel(fr[0]):'',district:fr[0]?.district||'',sub:fr[0]?.sub||'',readings:fr.length,
+      avgIR:avg(fr.map(s=>+s.ir||0)).toFixed(1),
+      avgIY:avg(fr.map(s=>+s.iy||0)).toFixed(1),
+      avgIB:avg(fr.map(s=>+s.ib||0)).toFixed(1),
+      avgImax:avg(fr.map(s=>+s.imax||0)).toFixed(1),
+      maxImax:fr.length?Math.max(...fr.map(s=>+s.imax||0)).toFixed(1):'0',
+      avgMW:avg(fr.map(s=>+s.mw||0)).toFixed(3)
     };
   });
-  dlCSV(rows,['Feeder','District','Substation','Readings','33KV Avg R','33KV Avg Y','33KV Avg B','33KV Avg V(kV)','11KV Avg R','11KV Avg Y','11KV Avg B','11KV Avg V(kV)','Avg Worst Imb (%)','Max Worst Imb (%)'],
-    ['feeder','district','sub','readings','avgR33','avgY33','avgB33','avgKv33','avgR11','avgY11','avgB11','avgKv11','avgImb','maxImb'],`feeder-summary-${today()}`);
+  dlCSV(rows,['Feeder','Type','District','Substation','Readings','Avg IR','Avg IY','Avg IB','Avg Imax','Max Imax','Avg MW'],
+    ['feeder','type','district','sub','readings','avgIR','avgIY','avgIB','avgImax','maxImax','avgMW'],`feeder-summary-${today()}`);
 }
+// Alerts now flag transformer over-temperature (oil>60 or winding>65) instead of imbalance
 function getAlerts(){
   const high=[],med=[];
   DB.submissions.forEach(s=>{
-    const p=panelVals(s);
-    const{imb33,imb11}=panelImbalance(s);
-    if(imb33>=10)high.push({...s,panel:'33KV',pr:p.r33,py:p.y33,pb:p.b33,imp:imb33});
-    else if(imb33>=5)med.push({...s,panel:'33KV',pr:p.r33,py:p.y33,pb:p.b33,imp:imb33});
-    if(imb11>=10)high.push({...s,panel:'11KV',pr:p.r11,py:p.y11,pb:p.b11,imp:imb11});
-    else if(imb11>=5)med.push({...s,panel:'11KV',pr:p.r11,py:p.y11,pb:p.b11,imp:imb11});
+    if(!isTrafo(s))return;
+    const ot=+s.oiltemp||0, wt=+s.windtemp||0;
+    if(ot>=70||wt>=75)high.push({...s,reason:`Oil ${ot}°C / Winding ${wt}°C`});
+    else if(ot>=60||wt>=65)med.push({...s,reason:`Oil ${ot}°C / Winding ${wt}°C`});
   });
   return{high,med};
 }
 function exportAlerts(){
   const{high,med}=getAlerts();
-  const all=[...high.map(a=>({...a,severity:'HIGH (>=10%)'})),...med.map(a=>({...a,severity:'MEDIUM (5-10%)'}))]
+  const all=[...high.map(a=>({...a,severity:'HIGH'})),...med.map(a=>({...a,severity:'WATCH'}))]
     .map(a=>{const{date,time}=entryDateTime(a);return{...a,date,time};})
     .sort((a,b)=>new Date(b.ts)-new Date(a.ts));
-  dlCSV(all,['Severity','Panel','Date','Time','User','District','Substation','Feeder','R (A)','Y (A)','B (A)','Voltage (kV)','Imbalance (%)','Remarks'],
-    ['severity','panel','date','time','user','district','sub','feeder','pr','py','pb','kv','imp','remarks'],`imbalance-alerts-${today()}`);
+  dlCSV(all,['Severity','Date','Time','User','Substation','Feeder','Oil Temp','Wind Temp','TAP','Remarks'],
+    ['severity','date','time','user','sub','feeder','oiltemp','windtemp','tap','remarks'],`temp-alerts-${today()}`);
 }
 function exportChartImage(id,name){const c=g(id);if(!c)return;const a=document.createElement('a');a.download=name+'-'+today()+'.png';a.href=c.toDataURL('image/png');a.click();}
 
@@ -572,108 +657,267 @@ async function doChangePw(){
 }
 
 /* ── USER FORM ── */
+function feederFields(feeder){
+  const m=FEEDER_META[feeder]||{type:'33out'};
+  const t=m.type;
+  const incBadge='<span style="font-size:10px;background:#E6F1FB;color:#0C447C;padding:2px 8px;border-radius:12px;font-weight:600;margin-left:6px">INCOMER</span>';
+  const outBadge='<span style="font-size:10px;background:#EAF3DE;color:#27500A;padding:2px 8px;border-radius:12px;font-weight:600;margin-left:6px">OUTGOING</span>';
+  const trafoBadge='<span style="font-size:10px;background:#FAEEDA;color:#633806;padding:2px 8px;border-radius:12px;font-weight:600;margin-left:6px">TRAFO</span>';
+  const autoField=(id,lbl)=>`<div style="flex:1;min-width:120px"><label class="lbl">${lbl}</label><input id="${id}" type="number" step="0.001" placeholder="auto" readonly style="background:var(--color-background-secondary);color:var(--color-text-secondary);cursor:default"></div>`;
+
+  if(t==='33inc') return `
+    <div class="card" style="margin-bottom:10px">
+      <div class="sl" style="color:#185FA5">33KV Incomer${incBadge}</div>
+      <div class="fg"><label class="lbl">System Voltage (kV)<span class="req-star">*</span></label><input id="fkv" type="number" step="0.01" placeholder="e.g. 33.0" oninput="calcAuto()"><div class="field-error-msg" id="err-fkv" style="display:none"><span aria-hidden="true">⚠</span> Voltage is required</div></div>
+      <div class="r3">
+        <div class="fg"><label class="lbl">IR (A)<span class="req-star">*</span></label><input id="fir" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fir')"><div class="field-error-msg" id="err-fir" style="display:none"><span aria-hidden="true">⚠</span> IR required</div></div>
+        <div class="fg"><label class="lbl">IY (A)<span class="req-star">*</span></label><input id="fiy" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fiy')"><div class="field-error-msg" id="err-fiy" style="display:none"><span aria-hidden="true">⚠</span> IY required</div></div>
+        <div class="fg"><label class="lbl">IB (A)<span class="req-star">*</span></label><input id="fib" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fib')"><div class="field-error-msg" id="err-fib" style="display:none"><span aria-hidden="true">⚠</span> IB required</div></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${autoField('fimax','Imax (A) — auto')}
+        ${autoField('fmw','MW — auto')}
+      </div>
+    </div>`;
+
+  if(t==='33out') return `
+    <div class="card" style="margin-bottom:10px">
+      <div class="sl" style="color:#185FA5">33KV Outgoing${outBadge}</div>
+      <div class="r3">
+        <div class="fg"><label class="lbl">IR (A)<span class="req-star">*</span></label><input id="fir" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fir')"><div class="field-error-msg" id="err-fir" style="display:none"><span aria-hidden="true">⚠</span> IR required</div></div>
+        <div class="fg"><label class="lbl">IY (A)<span class="req-star">*</span></label><input id="fiy" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fiy')"><div class="field-error-msg" id="err-fiy" style="display:none"><span aria-hidden="true">⚠</span> IY required</div></div>
+        <div class="fg"><label class="lbl">IB (A)<span class="req-star">*</span></label><input id="fib" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fib')"><div class="field-error-msg" id="err-fib" style="display:none"><span aria-hidden="true">⚠</span> IB required</div></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${autoField('fimax','Imax (A) — auto')}
+        ${autoField('fmw','MW — auto')}
+      </div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px;font-style:italic">MW calculated using today\'s 33KV Incomer voltage reading (pf=0.96)</div>
+    </div>`;
+
+  if(t==='11trafo') return `
+    <div class="card" style="margin-bottom:10px">
+      <div class="sl" style="color:#633806">11KV Transformer${trafoBadge}</div>
+      <div class="fg"><label class="lbl">Secondary Voltage (kV)<span class="req-star">*</span></label><input id="fkv" type="number" step="0.01" placeholder="e.g. 11.0" oninput="calcAuto()"><div class="field-error-msg" id="err-fkv" style="display:none"><span aria-hidden="true">⚠</span> Voltage is required</div></div>
+      <div class="r3">
+        <div class="fg"><label class="lbl">IR (A)<span class="req-star">*</span></label><input id="fir" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fir')"><div class="field-error-msg" id="err-fir" style="display:none"><span aria-hidden="true">⚠</span> IR required</div></div>
+        <div class="fg"><label class="lbl">IY (A)<span class="req-star">*</span></label><input id="fiy" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fiy')"><div class="field-error-msg" id="err-fiy" style="display:none"><span aria-hidden="true">⚠</span> IY required</div></div>
+        <div class="fg"><label class="lbl">IB (A)<span class="req-star">*</span></label><input id="fib" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fib')"><div class="field-error-msg" id="err-fib" style="display:none"><span aria-hidden="true">⚠</span> IB required</div></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${autoField('fimax','Imax (A) — auto')}
+        ${autoField('fmw','MW — auto')}
+      </div>
+      <div class="r2" style="margin-top:10px">
+        <div class="fg"><label class="lbl">TAP Position (0–19)<span class="req-star">*</span></label>
+          <select id="ftap" oninput="clearErr('ftap')">
+            <option value="">— select tap —</option>
+            ${Array.from({length:20},(_,i)=>`<option value="${i}">${i}</option>`).join('')}
+          </select>
+          <div class="field-error-msg" id="err-ftap" style="display:none"><span aria-hidden="true">⚠</span> TAP is required</div>
+        </div>
+        <div></div>
+      </div>
+      <div class="r2">
+        <div class="fg"><label class="lbl">Oil Temperature °C<span class="req-star">*</span></label><input id="fot" type="number" step="0.1" placeholder="e.g. 55.0" oninput="clearErr('fot')"><div class="field-error-msg" id="err-fot" style="display:none"><span aria-hidden="true">⚠</span> Oil Temp required</div></div>
+        <div class="fg"><label class="lbl">Winding Temperature °C<span class="req-star">*</span></label><input id="fwt" type="number" step="0.1" placeholder="e.g. 65.0" oninput="clearErr('fwt')"><div class="field-error-msg" id="err-fwt" style="display:none"><span aria-hidden="true">⚠</span> Winding Temp required</div></div>
+      </div>
+    </div>`;
+
+  // 11out
+  return `
+    <div class="card" style="margin-bottom:10px">
+      <div class="sl" style="color:#0F6E56">11KV Outgoing${outBadge}</div>
+      <div class="r3">
+        <div class="fg"><label class="lbl">IR (A)<span class="req-star">*</span></label><input id="fir" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fir')"><div class="field-error-msg" id="err-fir" style="display:none"><span aria-hidden="true">⚠</span> IR required</div></div>
+        <div class="fg"><label class="lbl">IY (A)<span class="req-star">*</span></label><input id="fiy" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fiy')"><div class="field-error-msg" id="err-fiy" style="display:none"><span aria-hidden="true">⚠</span> IY required</div></div>
+        <div class="fg"><label class="lbl">IB (A)<span class="req-star">*</span></label><input id="fib" type="number" step="0.1" placeholder="0.0" oninput="calcAuto();clearErr('fib')"><div class="field-error-msg" id="err-fib" style="display:none"><span aria-hidden="true">⚠</span> IB required</div></div>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap">
+        ${autoField('fimax','Imax (A) — auto')}
+        ${autoField('fmw','MW — auto')}
+      </div>
+      <div style="font-size:11px;color:var(--color-text-secondary);margin-top:6px;font-style:italic">MW calculated using today\'s 11KV Trafo voltage reading (pf=0.96)</div>
+    </div>`;
+}
+
+function calcAuto(){
+  const feeder=v('ff');
+  const m=FEEDER_META[feeder]||{type:'33out'};
+  const t=m.type;
+  const ir=parseFloat(v('fir'))||0;
+  const iy=parseFloat(v('fiy'))||0;
+  const ib=parseFloat(v('fib'))||0;
+  const imax=calcImax(ir,iy,ib);
+  const imaxEl=g('fimax'),mwEl=g('fmw');
+  if(imaxEl)imaxEl.value=imax||'';
+  if(mwEl&&imax){
+    let kv;
+    if(t==='33inc'||t==='11trafo'){kv=parseFloat(v('fkv'))||0;}
+    else if(t==='33out'){
+      const{date}=buildDateAndTime();
+      kv=getRefKV(v('fs'),date,33);
+    }else{
+      const{date}=buildDateAndTime();
+      kv=getRefKV(v('fs'),date,11);
+    }
+    mwEl.value=kv?calcMW(kv,imax):'';
+  }else if(mwEl){mwEl.value='';}
+}
+
 function showForm(msg){
   selectedTime=null;useCustomTime=false;
   const dists=SESSION.districts.length?SESSION.districts:DB.districts;
-  mount(`<div style="max-width:580px;margin:0 auto;padding:1rem">
-  ${topbar('Welcome, '+SESSION.id)}
+  mount(`<div style="max-width:600px;margin:0 auto;padding:1rem">
+  ${topbar('Welcome, '+(SESSION.name||SESSION.id))}
   ${msg?`<div class="ok">${msg}</div>`:''}
-
   ${datetimeWidget()}
-
   <div class="card" style="margin-bottom:10px">
     <div class="sl">Location</div>
-    <div class="fg"><label class="lbl">District<span class="req-star">*</span></label><select id="fd" onchange="onDist();clearErr('fd')"><option value="">— select district —</option>${dists.map(d=>`<option>${d}</option>`).join('')}</select><div class="field-error-msg" id="err-fd" style="display:none"><span aria-hidden="true">⚠</span> District is required</div></div>
-    <div class="fg"><label class="lbl">Substation<span class="req-star">*</span></label><select id="fs" onchange="onSub();clearErr('fs')" disabled><option value="">— select substation —</option></select><div class="field-error-msg" id="err-fs" style="display:none"><span aria-hidden="true">⚠</span> Substation is required</div></div>
-    <div class="fg" style="margin-bottom:0"><label class="lbl">Feeder<span class="req-star">*</span></label><select id="ff" onchange="clearErr('ff')" disabled><option value="">— select feeder —</option></select><div class="field-error-msg" id="err-ff" style="display:none"><span aria-hidden="true">⚠</span> Feeder is required</div></div>
+    <div class="fg"><label class="lbl">District<span class="req-star">*</span></label>
+      <select id="fd" onchange="onDist();clearErr('fd')"><option value="">— select district —</option>${dists.map(d=>`<option>${d}</option>`).join('')}</select>
+      <div class="field-error-msg" id="err-fd" style="display:none"><span aria-hidden="true">⚠</span> District is required</div></div>
+    <div class="fg"><label class="lbl">Substation<span class="req-star">*</span></label>
+      <select id="fs" onchange="onSub();clearErr('fs')" disabled><option value="">— select substation —</option></select>
+      <div class="field-error-msg" id="err-fs" style="display:none"><span aria-hidden="true">⚠</span> Substation is required</div></div>
+    <div class="fg" style="margin-bottom:0"><label class="lbl">Feeder<span class="req-star">*</span></label>
+      <select id="ff" onchange="onFeederChange();clearErr('ff')" disabled><option value="">— select feeder —</option></select>
+      <div class="field-error-msg" id="err-ff" style="display:none"><span aria-hidden="true">⚠</span> Feeder is required</div></div>
   </div>
-
-  <div class="card" style="margin-bottom:10px">
-    <div class="sl" style="color:#185FA5">⚡ 33KV Panel — Load readings</div>
-    <div class="r3">
-      <div class="fg"><label class="lbl">R Phase (A)<span class="req-star">*</span></label><input id="fr33" type="number" step="0.1" placeholder="0.0" oninput="clearErr('fr33')"><div class="field-error-msg" id="err-fr33" style="display:none"><span aria-hidden="true">⚠</span> 33KV R Phase is required</div></div>
-      <div class="fg"><label class="lbl">Y Phase (A)<span class="req-star">*</span></label><input id="fy33" type="number" step="0.1" placeholder="0.0" oninput="clearErr('fy33')"><div class="field-error-msg" id="err-fy33" style="display:none"><span aria-hidden="true">⚠</span> 33KV Y Phase is required</div></div>
-      <div class="fg"><label class="lbl">B Phase (A)<span class="req-star">*</span></label><input id="fb33" type="number" step="0.1" placeholder="0.0" oninput="clearErr('fb33')"><div class="field-error-msg" id="err-fb33" style="display:none"><span aria-hidden="true">⚠</span> 33KV B Phase is required</div></div>
-    </div>
-    <div class="fg" style="margin-bottom:0"><label class="lbl">33KV System Voltage (kV)<span class="req-star">*</span></label><input id="fkv33" type="number" step="0.1" placeholder="e.g. 33.0" oninput="clearErr('fkv33')"><div class="field-error-msg" id="err-fkv33" style="display:none"><span aria-hidden="true">⚠</span> 33KV Voltage is required</div></div>
-  </div>
-
-  <div class="card" style="margin-bottom:10px">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
-      <div class="sl" style="margin-bottom:0;color:#0F6E56">⚡ 11KV Panel — Load readings</div>
-      <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--color-text-secondary);cursor:pointer;font-weight:500">
-        <input type="checkbox" id="no11kv" onchange="toggle11kv()" style="width:auto;cursor:pointer">
-        No 11KV panel at this substation
-      </label>
-    </div>
-    <div id="kv11-fields">
-      <div class="r3">
-        <div class="fg"><label class="lbl">R Phase (A)<span class="req-star">*</span></label><input id="fr11" type="number" step="0.1" placeholder="0.0" oninput="clearErr('fr11')"><div class="field-error-msg" id="err-fr11" style="display:none"><span aria-hidden="true">⚠</span> 11KV R Phase is required</div></div>
-        <div class="fg"><label class="lbl">Y Phase (A)<span class="req-star">*</span></label><input id="fy11" type="number" step="0.1" placeholder="0.0" oninput="clearErr('fy11')"><div class="field-error-msg" id="err-fy11" style="display:none"><span aria-hidden="true">⚠</span> 11KV Y Phase is required</div></div>
-        <div class="fg"><label class="lbl">B Phase (A)<span class="req-star">*</span></label><input id="fb11" type="number" step="0.1" placeholder="0.0" oninput="clearErr('fb11')"><div class="field-error-msg" id="err-fb11" style="display:none"><span aria-hidden="true">⚠</span> 11KV B Phase is required</div></div>
-      </div>
-      <div class="fg" style="margin-bottom:0"><label class="lbl">11KV System Voltage (kV)<span class="req-star">*</span></label><input id="fkv11" type="number" step="0.1" placeholder="e.g. 11.0" oninput="clearErr('fkv11')"><div class="field-error-msg" id="err-fkv11" style="display:none"><span aria-hidden="true">⚠</span> 11KV Voltage is required</div></div>
-    </div>
-    <div id="kv11-na-msg" style="display:none;font-size:12px;color:var(--color-text-secondary);font-style:italic;padding:6px 0">11KV readings will be recorded as N/A for this entry.</div>
-  </div>
-
-
+  <div id="feeder-fields"></div>
   <div class="card">
-    <div class="sl">Remarks</div>
     <div class="fg" style="margin-bottom:10px"><label class="lbl">Remarks</label><input id="fm" placeholder="Optional"></div>
     <div id="err-time" style="display:none;margin-bottom:10px" class="field-error-msg"><span aria-hidden="true">⚠</span> Please select a reading time slot or enter a custom time</div>
     <div style="display:flex;gap:8px">
       <button class="bp" style="flex:1" onclick="doSave()"><span aria-hidden="true">💾</span> Save entry</button>
-      <button onclick="clearF()" style="padding:7px 10px" aria-label="Clear"><span aria-hidden="true">✕</span></button>
+      <button onclick="clearF()" style="padding:7px 10px"><span aria-hidden="true">✕</span></button>
     </div>
   </div></div>`);
   startClock();
 }
 
-function onDist(){const d=v('fd'),s=g('fs'),f=g('ff');s.innerHTML='<option value="">— select substation —</option>';s.disabled=!d;f.innerHTML='<option value="">— select feeder —</option>';f.disabled=true;if(d&&DB.subs[d])DB.subs[d].forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o);});const na=g('no11kv');if(na){na.checked=false;na.disabled=false;toggle11kv();}}
+function onDist(){
+  const d=v('fd'),s=g('fs'),f=g('ff');
+  s.innerHTML='<option value="">— select substation —</option>';s.disabled=!d;
+  f.innerHTML='<option value="">— select feeder —</option>';f.disabled=true;
+  if(d&&DB.subs[d])DB.subs[d].forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;s.appendChild(o);});
+  g('feeder-fields').innerHTML='';
+}
 function onSub(){
   const s=v('fs'),f=g('ff');
   f.innerHTML='<option value="">— select feeder —</option>';f.disabled=!s;
   if(s&&DB.feeders[s])DB.feeders[s].forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;f.appendChild(o);});
-
-  // Auto-configure 11KV section based on substation's voltage level
-  const na=g('no11kv');
-  if(na){
-    const vLevel=(DB.subVoltage&&DB.subVoltage[s])||'33+11';
-    if(vLevel==='33'){
-      na.checked=true;
-      na.disabled=true; // locked — substation has no 11KV panel at all
-    }else{
-      na.checked=false;
-      na.disabled=false; // 33+11 substation — officer may still tick if 11KV panel is down
-    }
-    toggle11kv();
-  }
+  g('feeder-fields').innerHTML='';
 }
-function toggle11kv(){
-  const checked=g('no11kv').checked;
-  const fields=g('kv11-fields'), msg=g('kv11-na-msg');
-  ['fr11','fy11','fb11','fkv11'].forEach(id=>{
-    const e=g(id);
-    if(e){e.disabled=checked;if(checked){e.value='';clearErr(id);}}
-  });
-  if(fields)fields.style.opacity=checked?'0.4':'1';
-  if(msg){
-    msg.style.display=checked?'block':'none';
-    msg.textContent=g('no11kv').disabled
-      ?'This substation has no 11KV panel — 11KV readings recorded as N/A.'
-      :'11KV readings will be recorded as N/A for this entry.';
+function onFeederChange(){
+  const f=v('ff');
+  if(!f){g('feeder-fields').innerHTML='';return;}
+  renderFeederFields(f);
+}
+
+// ── Render the right fields based on feeder type ──
+function renderFeederFields(feeder){
+  const type=feederType(feeder);
+  const ff=g('feeder-fields');
+  if(!ff)return;
+
+  const numInput=(id,label,placeholder)=>`
+    <div class="fg"><label class="lbl">${label}<span class="req-star">*</span></label>
+      <input id="${id}" type="number" step="0.1" placeholder="${placeholder}" oninput="calcLive()">
+      <div class="field-error-msg" id="err-${id}" style="display:none"><span aria-hidden="true">⚠</span> ${label} is required</div>
+    </div>`;
+
+  const readOnly=(id,label)=>`
+    <div class="fg"><label class="lbl">${label}</label>
+      <input id="${id}" type="text" readonly style="background:var(--color-background-secondary);font-weight:500;color:var(--color-text-info)" placeholder="auto">
+    </div>`;
+
+  if(type==='33KV_INCOMER'){
+    ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #185FA5">
+      <div class="sl" style="color:#185FA5">33KV Incomer — ${feeder}</div>
+      <div class="fg"><label class="lbl">System Voltage (kV)<span class="req-star">*</span></label>
+        <input id="fkv" type="number" step="0.01" placeholder="e.g. 33.5" oninput="calcLive()">
+        <div class="field-error-msg" id="err-fkv" style="display:none"><span aria-hidden="true">⚠</span> Voltage is required</div>
+      </div>
+      <div class="r3">${numInput('fir','IR (A)','0.0')}${numInput('fiy','IY (A)','0.0')}${numInput('fib','IB (A)','0.0')}</div>
+      <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
+    </div>`;
+  } else if(type==='33KV_OUT'){
+    const lastKV=latestKV(v('fs'),'33KV');
+    ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #185FA5">
+      <div class="sl" style="color:#185FA5">33KV Outgoing — ${feeder}</div>
+      ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest incomer KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No incomer KV recorded today — MW cannot be calculated</div>'}
+      <div class="r3">${numInput('fir','IR (A)','0.0')}${numInput('fiy','IY (A)','0.0')}${numInput('fib','IB (A)','0.0')}</div>
+      <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
+    </div>`;
+  } else if(type==='11KV_TRAFO'){
+    ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #0F6E56">
+      <div class="sl" style="color:#0F6E56">11KV Transformer — ${feeder}</div>
+      <div class="fg"><label class="lbl">Secondary Voltage (kV)<span class="req-star">*</span></label>
+        <input id="fkv" type="number" step="0.01" placeholder="e.g. 11.2" oninput="calcLive()">
+        <div class="field-error-msg" id="err-fkv" style="display:none"><span aria-hidden="true">⚠</span> Voltage is required</div>
+      </div>
+      <div class="r3">${numInput('fir','IR (A)','0.0')}${numInput('fiy','IY (A)','0.0')}${numInput('fib','IB (A)','0.0')}</div>
+      <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
+      <div class="r2">
+        <div class="fg"><label class="lbl">TAP Position<span class="req-star">*</span></label>
+          <select id="ftap"><option value="">— select —</option>${Array.from({length:20},(_,i)=>`<option value="${i}">${i}</option>`).join('')}</select>
+          <div class="field-error-msg" id="err-ftap" style="display:none"><span aria-hidden="true">⚠</span> TAP position is required</div>
+        </div>
+        <div></div>
+      </div>
+      <div class="r2">
+        <div class="fg"><label class="lbl">Oil Temperature (°C)<span class="req-star">*</span></label>
+          <input id="foiltemp" type="number" step="0.1" placeholder="e.g. 45.0">
+          <div class="field-error-msg" id="err-foiltemp" style="display:none"><span aria-hidden="true">⚠</span> Oil temp required</div>
+        </div>
+        <div class="fg"><label class="lbl">Winding Temperature (°C)<span class="req-star">*</span></label>
+          <input id="fwindtemp" type="number" step="0.1" placeholder="e.g. 52.0">
+          <div class="field-error-msg" id="err-fwindtemp" style="display:none"><span aria-hidden="true">⚠</span> Winding temp required</div>
+        </div>
+      </div>
+    </div>`;
+  } else if(type==='11KV_OUT'){
+    const lastKV=latestKV(v('fs'),'11KV');
+    ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #0F6E56">
+      <div class="sl" style="color:#0F6E56">11KV Outgoing — ${feeder}</div>
+      ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest TRAFO KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No TRAFO KV recorded today — MW cannot be calculated</div>'}
+      <div class="r3">${numInput('fir','IR (A)','0.0')}${numInput('fiy','IY (A)','0.0')}${numInput('fib','IB (A)','0.0')}</div>
+      <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
+    </div>`;
   }
+  calcLive();
+}
+
+// ── Live Imax and MW calculation as user types ──
+function calcLive(){
+  const feeder=v('ff');
+  const type=feederType(feeder);
+  const ir=parseFloat(v('fir')),iy=parseFloat(v('fiy')),ib=parseFloat(v('fib'));
+  const imax=calcImax(isNaN(ir)?0:ir, isNaN(iy)?0:iy, isNaN(ib)?0:ib);
+  const imaxEl=g('fimax'),mwEl=g('fmw');
+  if(imaxEl)imaxEl.value=(imax||'').toString();
+
+  let kv=null;
+  if(type==='33KV_INCOMER'||type==='11KV_TRAFO'){
+    kv=parseFloat(v('fkv'))||null;
+  } else if(type==='33KV_OUT'){
+    kv=latestKV(v('fs'),'33KV');
+  } else if(type==='11KV_OUT'){
+    kv=latestKV(v('fs'),'11KV');
+  }
+  const mw=calcMW(kv,imax);
+  if(mwEl)mwEl.value=mw!==null?mw.toString():'—';
 }
 
 function clearF(){
-  ['fd','fs','ff','fr33','fy33','fb33','fkv33','fr11','fy11','fb11','fkv11','fm'].forEach(i=>{const e=g(i);if(e)e.value='';});
+  ['fd','fs','ff','fm','fkv','fir','fiy','fib','ftap','foiltemp','fwindtemp'].forEach(i=>{const e=g(i);if(e)e.value='';});
   if(g('fs'))g('fs').disabled=true;if(g('ff'))g('ff').disabled=true;
+  if(g('feeder-fields'))g('feeder-fields').innerHTML='';
   selectedTime=null;useCustomTime=false;
   document.querySelectorAll('.time-slot').forEach(el=>{el.classList.remove('selected','custom-active');});
   const ct=g('custom-time');if(ct){const now=new Date();ct.value=`${pad(now.getHours())}:${pad(now.getMinutes())}`;}
   updateTimestampPreview();
-  const na=g('no11kv');if(na){na.checked=false;na.disabled=false;toggle11kv();}
 }
 
 function clearErr(id){
@@ -696,39 +940,49 @@ function showToast(success,msg){
   setTimeout(()=>{t.style.transition='opacity .4s';t.style.opacity='0';setTimeout(()=>t.remove(),400);},3500);
 }
 
+
+
 async function doSave(){
   const d=v('fd'),s=v('fs'),f=v('ff');
-  const r33=v('fr33'),y33=v('fy33'),b33=v('fb33'),kv33=v('fkv33');
-  const no11=g('no11kv').checked;
-  const r11=v('fr11'),y11=v('fy11'),b11=v('fb11'),kv11=v('fkv11');
   let valid=true;
 
-  // Clear all errors first
-  ['fd','fs','ff','fr33','fy33','fb33','fkv33','fr11','fy11','fb11','fkv11'].forEach(id=>clearErr(id));
+  // Clear base errors
+  ['fd','fs','ff'].forEach(id=>clearErr(id));
   const te=g('err-time');if(te)te.style.display='none';
   const dtbox=g('datetime-box-el');if(dtbox)dtbox.classList.remove('field-error-box');
 
-  // Validate each required field
   if(!d){markErr('fd');valid=false;}
   if(!s){markErr('fs');valid=false;}
   if(!f){markErr('ff');valid=false;}
-  if(!r33){markErr('fr33');valid=false;}
-  if(!y33){markErr('fy33');valid=false;}
-  if(!b33){markErr('fb33');valid=false;}
-  if(!kv33){markErr('fkv33');valid=false;}
-  // 11KV fields only mandatory if "No 11KV panel" is NOT checked
-  if(!no11){
-    if(!r11){markErr('fr11');valid=false;}
-    if(!y11){markErr('fy11');valid=false;}
-    if(!b11){markErr('fb11');valid=false;}
-    if(!kv11){markErr('fkv11');valid=false;}
+
+  // Feeder-type specific validation
+  const type=feederType(f);
+  const ir=v('fir'),iy=v('fiy'),ib=v('fib');
+  const kv=v('fkv'),tap=v('ftap'),oiltemp=v('foiltemp'),windtemp=v('fwindtemp');
+
+  if(f){
+    ['fir','fiy','fib'].forEach(id=>clearErr(id));
+    if(!ir){markErr('fir');valid=false;}
+    if(!iy){markErr('fiy');valid=false;}
+    if(!ib){markErr('fib');valid=false;}
+
+    if(type==='33KV_INCOMER'||type==='11KV_TRAFO'){
+      clearErr('fkv');
+      if(!kv){markErr('fkv');valid=false;}
+    }
+    if(type==='11KV_TRAFO'){
+      clearErr('ftap');clearErr('foiltemp');clearErr('fwindtemp');
+      if(tap===''){markErr('ftap');valid=false;}
+      if(!oiltemp){markErr('foiltemp');valid=false;}
+      if(!windtemp){markErr('fwindtemp');valid=false;}
+    }
   }
 
   // Validate time selection
   const timeSelected=selectedTime!==null||useCustomTime;
   if(!timeSelected){
     if(te)te.style.display='flex';
-    const dtbox=g('datetime-box-el');if(dtbox)dtbox.classList.add('field-error-box');
+    if(dtbox)dtbox.classList.add('field-error-box');
     valid=false;
   }
 
@@ -739,69 +993,73 @@ async function doSave(){
     return;
   }
 
-  // Disable save button and show uploading state
   const btn=document.querySelector('button.bp[onclick="doSave()"]');
   if(btn){btn.disabled=true;btn.innerHTML='<span aria-hidden="true">⏳</span> Uploading…';}
 
   const {date,time,ts}=buildDateAndTime();
+
+  // Compute Imax and MW
+  const imax=calcImax(+ir,+iy,+ib);
+  let kvForMW=null;
+  if(type==='33KV_INCOMER'||type==='11KV_TRAFO') kvForMW=parseFloat(kv)||null;
+  else if(type==='33KV_OUT') kvForMW=latestKV(s,'33KV');
+  else if(type==='11KV_OUT') kvForMW=latestKV(s,'11KV');
+  const mw=calcMW(kvForMW,imax);
+
   const entry={
     id:uid(),user:SESSION.id,district:d,sub:s,feeder:f,
-    r33:+r33,y33:+y33,b33:+b33,kv33:+kv33,
-    // If "No 11KV panel" — store as 'NA' string so it's clearly not zero/missing data
-    r11:no11?'NA':+r11, y11:no11?'NA':+y11, b11:no11?'NA':+b11, kv11:no11?'NA':+kv11,
-    has11kv:!no11,
+    feederType:type,
+    ir:+ir,iy:+iy,ib:+ib,
+    imax,mw,
+    kv:kv?parseFloat(kv):null,
+    tap:type==='11KV_TRAFO'?parseInt(tap):null,
+    oiltemp:type==='11KV_TRAFO'?parseFloat(oiltemp):null,
+    windtemp:type==='11KV_TRAFO'?parseFloat(windtemp):null,
     remarks:v('fm'),
-    date,   // plain string e.g. "11/06/2026"
-    time,   // plain string e.g. "17:00"
-    ts,     // for local display only
-    synced:false  // queue flag — set true only after confirmed upload
+    date,time,ts,
+    synced:false
   };
-  const{imb33,imb11}=panelImbalance(entry);
-  entry.imb33=imb33;entry.imb11=no11?'NA':imb11;
 
-  // 1. Save locally first — entry is never lost regardless of connectivity
   DB.submissions.push(entry);
   save();
   selectedTime=null;useCustomTime=false;
 
-  // 2. Attempt upload via sync queue
   if(navigator.onLine){
     try{
       await uploadEntry(entry);
-      entry.synced=true;
-      save();
+      entry.synced=true;save();
       showToast(true,`Successfully uploaded — ${f} @ ${time} → ${s}, ${d}`);
     }catch(err){
-      showToast(false,`Saved on this device — will auto-upload when connection returns. (${pendingCount()} pending)`);
+      showToast(false,`Saved on device — auto-uploads when connection returns. (${pendingCount()} pending)`);
     }
   }else{
-    showToast(false,`No internet — saved on this device. Will auto-upload when connection returns. (${pendingCount()} pending)`);
+    showToast(false,`No internet — saved on device. Auto-uploads when connection returns. (${pendingCount()} pending)`);
   }
-  // Also try to flush any other pending entries while we may have signal
   processSyncQueue();
-
   if(btn){btn.disabled=false;btn.innerHTML='<span aria-hidden="true">💾</span> Save entry';}
   setTimeout(()=>showForm(),2200);
 }
 
+
 /* ── HISTORY ── */
 function exportMyEntries(){
   const rows=DB.submissions.filter(s=>s.user===SESSION.id).map(s=>{
-    const p=panelVals(s);const{imb33,imb11}=panelImbalance(s);const{date,time}=entryDateTime(s);
+    const{date,time}=entryDateTime(s);
     return{date,time,district:s.district,sub:s.sub,feeder:s.feeder,
-      r33:p.r33,y33:p.y33,b33:p.b33,kv33:p.kv33,imb33,
-      r11:p.r11,y11:p.y11,b11:p.b11,kv11:p.kv11,imb11,remarks:s.remarks||''};
+      ftype:fTypeLabel(s),kv:s.kv!=null?s.kv:'',ir:s.ir,iy:s.iy,ib:s.ib,
+      imax:s.imax,mw:s.mw!=null?s.mw:'',tap:s.tap!=null?s.tap:'',
+      oiltemp:s.oiltemp!=null?s.oiltemp:'',windtemp:s.windtemp!=null?s.windtemp:'',remarks:s.remarks||''};
   });
   dlCSV(rows,
-    ['Date','Time','District','Substation','Feeder','33KV R(A)','33KV Y(A)','33KV B(A)','33KV V(kV)','33KV Imb(%)','11KV R(A)','11KV Y(A)','11KV B(A)','11KV V(kV)','11KV Imb(%)','Remarks'],
-    ['date','time','district','sub','feeder','r33','y33','b33','kv33','imb33','r11','y11','b11','kv11','imb11','remarks'],
+    ['Date','Time','District','Substation','Feeder','Type','kV','IR','IY','IB','Imax','MW','TAP','Oil Temp','Wind Temp','Remarks'],
+    ['date','time','district','sub','feeder','ftype','kv','ir','iy','ib','imax','mw','tap','oiltemp','windtemp','remarks'],
     'my-entries-'+SESSION.id);
 }
 
 function showHistory(){
   const rows=[...DB.submissions].filter(s=>s.user===SESSION.id).reverse();
   const nPending=rows.filter(s=>s.synced===false).length;
-  mount(`<div style="max-width:720px;margin:0 auto;padding:1.2rem 1rem">
+  mount(`<div style="max-width:760px;margin:0 auto;padding:1.2rem 1rem">
   ${topbar('My entries')}
   ${nPending?`<div style="background:#FAEEDA;border:0.5px solid #FAC775;color:#633806;border-radius:var(--border-radius-md);padding:8px 12px;font-size:12px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
     <span><span aria-hidden="true">☁⏸</span> ${nPending} entr${nPending===1?'y':'ies'} pending upload — will auto-upload when internet returns</span>
@@ -813,15 +1071,14 @@ function showHistory(){
       <button class="bs" onclick="exportMyEntries()">
         <span aria-hidden="true">⬇</span> Export CSV</button>
     </div>
-    <table><thead><tr><th>Date</th><th>Time</th><th>District</th><th>Substation</th><th>Feeder</th><th colspan="4" style="text-align:center;background:#E6F1FB;color:#0C447C">33KV (R/Y/B/kV)</th><th colspan="4" style="text-align:center;background:#E2F2EC;color:#0F6E56">11KV (R/Y/B/kV)</th><th>Imb.</th><th>Sync</th><th>Remarks</th></tr></thead>
+    <table><thead><tr><th>Date</th><th>Time</th><th>Substation</th><th>Feeder</th><th>Type</th><th>kV</th><th>IR</th><th>IY</th><th>IB</th><th>Imax</th><th>MW</th><th>TAP</th><th>OT</th><th>WT</th><th>Sync</th></tr></thead>
     <tbody>${rows.map(s=>{
-      const{worst}=panelImbalance(s);
-      const p=panelVals(s);
       const{date,time}=entryDateTime(s);
       const syncBadge=s.synced===false
         ?'<span class="badge ba" title="Pending upload"><span aria-hidden="true">☁⏸</span></span>'
         :'<span class="badge bok" title="Uploaded"><span aria-hidden="true">☁✓</span></span>';
-      return`<tr><td style="white-space:nowrap">${date}</td><td style="white-space:nowrap;font-weight:500">${time}</td><td>${s.district}</td><td>${s.sub}</td><td><span class="badge bb">${s.feeder}</span></td><td style="background:rgba(230,241,251,0.35)">${p.r33}</td><td style="background:rgba(230,241,251,0.35)">${p.y33}</td><td style="background:rgba(230,241,251,0.35)">${p.b33}</td><td style="background:rgba(230,241,251,0.35)">${p.kv33}</td><td style="background:rgba(226,242,236,0.35)">${p.r11}</td><td style="background:rgba(226,242,236,0.35)">${p.y11}</td><td style="background:rgba(226,242,236,0.35)">${p.b11}</td><td style="background:rgba(226,242,236,0.35)">${p.kv11}</td><td><span class="badge ${worst>=10?'bam':worst>=5?'ba':'bok'}">${worst}%</span></td><td>${syncBadge}</td><td>${s.remarks||'—'}</td></tr>`;
+      const tcolor=is33(s)?'#0C447C':'#0F6E56';
+      return`<tr><td style="white-space:nowrap">${date}</td><td style="white-space:nowrap;font-weight:500">${time}</td><td>${s.sub}</td><td><span class="badge bb">${s.feeder}</span></td><td style="font-size:10px;color:${tcolor};font-weight:600">${fTypeLabel(s)}</td><td>${s.kv!=null?s.kv:'—'}</td><td>${s.ir!=null?s.ir:'—'}</td><td>${s.iy!=null?s.iy:'—'}</td><td>${s.ib!=null?s.ib:'—'}</td><td style="font-weight:600">${s.imax!=null?s.imax:'—'}</td><td style="font-weight:600;color:#185FA5">${s.mw!=null?s.mw:'—'}</td><td>${s.tap!=null?s.tap:'—'}</td><td>${s.oiltemp!=null?s.oiltemp:'—'}</td><td>${s.windtemp!=null?s.windtemp:'—'}</td><td>${syncBadge}</td></tr>`;
     }).join('')}</tbody></table>`}
   </div></div>`);
 }
@@ -901,11 +1158,10 @@ function renderCharts(){
     <span style="font-size:12px;color:var(--color-text-secondary);font-weight:500;margin-right:4px"><span aria-hidden="true">⬇</span> Export:</span>
     <button class="bs bp" onclick="exportTrendData()"><span aria-hidden="true">📤</span> Trend data (CSV)</button>
     <button class="bs bp" onclick="exportFeederSummary()"><span aria-hidden="true">📊</span> Feeder summary (CSV)</button>
-    <button class="bs bsuc" onclick="exportAlerts()"><span aria-hidden="true">⚠</span> Alerts report (CSV)</button>
+    <button class="bs bsuc" onclick="exportAlerts()"><span aria-hidden="true">⚠</span> Temp alerts (CSV)</button>
     <span style="font-size:11px;color:var(--color-text-secondary);margin-left:2px">PNG:</span>
-    <button class="bs" onclick="exportChartImage('ch-trend','phase-load-trend')"><span aria-hidden="true">🖼</span> Load</button>
-    <button class="bs" onclick="exportChartImage('ch-volt','voltage-trend')"><span aria-hidden="true">🖼</span> Voltage</button>
-    <button class="bs" onclick="exportChartImage('ch-imb','imbalance')"><span aria-hidden="true">🖼</span> Imbalance</button>
+    <button class="bs" onclick="exportChartImage('ch-trend','load-trend')"><span aria-hidden="true">🖼</span> Load</button>
+    <button class="bs" onclick="exportChartImage('ch-mw','mw-trend')"><span aria-hidden="true">🖼</span> MW</button>
     <button class="bs" onclick="exportChartImage('ch-bar','feeder-avg')"><span aria-hidden="true">🖼</span> Feeders</button>
   </div>
   <div class="filter-bar">
@@ -916,12 +1172,12 @@ function renderCharts(){
     <span id="filter-label" style="align-self:flex-end;font-size:11px;padding:4px 8px;background:var(--color-background-info);color:var(--color-text-info);border-radius:var(--border-radius-md)">${filterLabel()}</span>
   </div>
   <div class="r2" style="margin-bottom:14px">
-    <div class="card" style="padding:1rem"><div class="sl">Phase load trend (A)</div><div style="height:200px;position:relative"><canvas id="ch-trend"></canvas></div></div>
-    <div class="card" style="padding:1rem"><div class="sl">System voltage trend (kV)</div><div style="height:200px;position:relative"><canvas id="ch-volt"></canvas></div></div>
+    <div class="card" style="padding:1rem"><div class="sl">Phase load trend — Imax (A)</div><div style="height:200px;position:relative"><canvas id="ch-trend"></canvas></div></div>
+    <div class="card" style="padding:1rem"><div class="sl">MW trend</div><div style="height:200px;position:relative"><canvas id="ch-mw"></canvas></div></div>
   </div>
   <div class="r2" style="margin-bottom:14px">
-    <div class="card" style="padding:1rem"><div class="sl">Phase imbalance % per reading</div><div style="height:200px;position:relative"><canvas id="ch-imb"></canvas></div></div>
-    <div class="card" style="padding:1rem"><div class="sl">Average load by feeder (A)</div><div style="height:200px;position:relative"><canvas id="ch-bar"></canvas></div></div>
+    <div class="card" style="padding:1rem"><div class="sl">Average Imax by feeder (A)</div><div style="height:200px;position:relative"><canvas id="ch-bar"></canvas></div></div>
+    <div class="card" style="padding:1rem"><div class="sl">Transformer temperatures (°C)</div><div style="height:200px;position:relative"><canvas id="ch-temp"></canvas></div></div>
   </div>
   <div id="alert-panel"></div>`;
   updateSubFilter();updateFeederFilter();
@@ -935,31 +1191,30 @@ function drawCharts(){
   if(fl)fl.textContent=filterLabel()+' ('+rows.length+' readings)';
   function mk(id,config){const el=g(id);if(!el)return;if(chartInst[id])try{chartInst[id].destroy();}catch(e){}chartInst[id]=new Chart(el,config);}
   if(!rows.length){
-    ['ch-trend','ch-volt','ch-imb'].forEach(id=>{const el=g(id);if(!el)return;if(chartInst[id])try{chartInst[id].destroy();}catch(e){}const ctx=el.getContext('2d');ctx.clearRect(0,0,el.width,el.height);ctx.fillStyle=c.text;ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('No data for this filter',el.width/2,el.height/2);});
+    ['ch-trend','ch-mw','ch-bar','ch-temp'].forEach(id=>{const el=g(id);if(!el)return;if(chartInst[id])try{chartInst[id].destroy();}catch(e){}const ctx=el.getContext('2d');ctx.clearRect(0,0,el.width,el.height);ctx.fillStyle=c.text;ctx.font='13px sans-serif';ctx.textAlign='center';ctx.fillText('No data for this filter',el.width/2,el.height/2);});
     return;
   }
+  // Phase load trend — IR/IY/IB
   mk('ch-trend',{type:'line',data:{labels,datasets:[
-    {label:'33KV R',data:rows.map(s=>panelVals(s).r33||null),borderColor:c.r,tension:0.3,pointRadius:3,borderWidth:2,fill:false},
-    {label:'33KV Y',data:rows.map(s=>panelVals(s).y33||null),borderColor:c.y,tension:0.3,pointRadius:3,borderWidth:2,fill:false},
-    {label:'33KV B',data:rows.map(s=>panelVals(s).b33||null),borderColor:c.b,tension:0.3,pointRadius:3,borderWidth:2,fill:false},
-    {label:'11KV R',data:rows.map(s=>{const v=panelVals(s).r11;return(v===''||v==='NA')?null:v;}),borderColor:c.r,borderDash:[5,4],tension:0.3,pointRadius:2,borderWidth:1.5,fill:false},
-    {label:'11KV Y',data:rows.map(s=>{const v=panelVals(s).y11;return(v===''||v==='NA')?null:v;}),borderColor:c.y,borderDash:[5,4],tension:0.3,pointRadius:2,borderWidth:1.5,fill:false},
-    {label:'11KV B',data:rows.map(s=>{const v=panelVals(s).b11;return(v===''||v==='NA')?null:v;}),borderColor:c.b,borderDash:[5,4],tension:0.3,pointRadius:2,borderWidth:1.5,fill:false},
+    {label:'IR',data:rows.map(s=>s.ir!=null?s.ir:null),borderColor:c.r,tension:0.3,pointRadius:3,borderWidth:2,fill:false},
+    {label:'IY',data:rows.map(s=>s.iy!=null?s.iy:null),borderColor:c.y,tension:0.3,pointRadius:3,borderWidth:2,fill:false},
+    {label:'IB',data:rows.map(s=>s.ib!=null?s.ib:null),borderColor:c.b,tension:0.3,pointRadius:3,borderWidth:2,fill:false},
+    {label:'Imax',data:rows.map(s=>s.imax!=null?s.imax:null),borderColor:c.avg,borderDash:[5,4],tension:0.3,pointRadius:2,borderWidth:1.5,fill:false},
   ]},options:baseOpts()});
-  mk('ch-volt',{type:'line',data:{labels,datasets:[
-    {label:'33KV Voltage',data:rows.map(s=>panelVals(s).kv33||null),borderColor:c.r,backgroundColor:c.r+'22',tension:0.3,pointRadius:3,borderWidth:2,fill:true},
-    {label:'11KV Voltage',data:rows.map(s=>{const v=panelVals(s).kv11;return(v===''||v==='NA')?null:v;}),borderColor:c.b,backgroundColor:c.b+'22',tension:0.3,pointRadius:3,borderWidth:2,fill:true},
+  // MW trend
+  mk('ch-mw',{type:'line',data:{labels,datasets:[
+    {label:'MW',data:rows.map(s=>s.mw!=null?s.mw:null),borderColor:'#185FA5',backgroundColor:'#185FA522',tension:0.3,pointRadius:3,borderWidth:2,fill:true},
   ]},options:baseOpts()});
-  const imp33Data=rows.map(s=>panelImbalance(s).imb33);
-  const imp11Data=rows.map(s=>{const v=panelImbalance(s).imb11;return v==='NA'?0:v;});
-  mk('ch-imb',{type:'bar',data:{labels,datasets:[
-    {label:'33KV Imb %',data:imp33Data,backgroundColor:imp33Data.map(x=>x>=10?'#E24B4A':x>=5?'#EF9F27':'#185FA5'),borderRadius:3},
-    {label:'11KV Imb %',data:imp11Data,backgroundColor:imp11Data.map(x=>x>=10?'#E24B4A':x>=5?'#EF9F27':'#0F6E56'),borderRadius:3},
-  ]},options:baseOpts()});
+  // Average Imax by feeder
   const allF=[...new Set(DB.submissions.map(s=>s.feeder))].sort();
   mk('ch-bar',{type:'bar',data:{labels:allF,datasets:[
-    {label:'33KV Avg (A)',data:allF.map(f=>{const fr=DB.submissions.filter(s=>s.feeder===f);const vals=fr.map(s=>{const p=panelVals(s);return(p.r33!==''&&p.y33!==''&&p.b33!=='')?(+p.r33+ +p.y33+ +p.b33)/3:null;}).filter(x=>x!==null);return vals.length?+(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1):0;}),backgroundColor:c.r,borderRadius:3},
-    {label:'11KV Avg (A)',data:allF.map(f=>{const fr=DB.submissions.filter(s=>s.feeder===f);const vals=fr.map(s=>{const p=panelVals(s);return(p.r11!==''&&p.r11!=='NA'&&p.y11!==''&&p.y11!=='NA'&&p.b11!==''&&p.b11!=='NA')?(+p.r11+ +p.y11+ +p.b11)/3:null;}).filter(x=>x!==null);return vals.length?+(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1):0;}),backgroundColor:c.b,borderRadius:3},
+    {label:'Avg Imax (A)',data:allF.map(f=>{const fr=DB.submissions.filter(s=>s.feeder===f);const vals=fr.map(s=>+s.imax||0).filter(x=>x>0);return vals.length?+(vals.reduce((a,b)=>a+b,0)/vals.length).toFixed(1):0;}),backgroundColor:c.r,borderRadius:3},
+  ]},options:baseOpts()});
+  // Transformer temperatures (trafo rows only)
+  const trafoRows=rows.filter(s=>isTrafo(s));
+  mk('ch-temp',{type:'line',data:{labels:trafoRows.map(s=>fmtShort(s.ts)+' '+s.feeder),datasets:[
+    {label:'Oil Temp °C',data:trafoRows.map(s=>s.oiltemp!=null?s.oiltemp:null),borderColor:'#E24B4A',tension:0.3,pointRadius:3,borderWidth:2,fill:false},
+    {label:'Winding Temp °C',data:trafoRows.map(s=>s.windtemp!=null?s.windtemp:null),borderColor:'#EF9F27',tension:0.3,pointRadius:3,borderWidth:2,fill:false},
   ]},options:baseOpts()});
 }
 
@@ -968,21 +1223,19 @@ function updateAlertPanel(){
   const rows=filteredRows();
   const high=[],med=[];
   rows.forEach(s=>{
-    const p=panelVals(s);
-    const{imb33,imb11}=panelImbalance(s);
-    if(imb33>=10)high.push({...s,panel:'33KV',pr:p.r33,py:p.y33,pb:p.b33,imp:imb33});
-    else if(imb33>=5)med.push({...s,panel:'33KV',pr:p.r33,py:p.y33,pb:p.b33,imp:imb33});
-    if(imb11>=10)high.push({...s,panel:'11KV',pr:p.r11,py:p.y11,pb:p.b11,imp:imb11});
-    else if(imb11>=5)med.push({...s,panel:'11KV',pr:p.r11,py:p.y11,pb:p.b11,imp:imb11});
+    if(!isTrafo(s))return;
+    const ot=+s.oiltemp||0, wt=+s.windtemp||0;
+    if(ot>=70||wt>=75)high.push({...s,ot,wt});
+    else if(ot>=60||wt>=65)med.push({...s,ot,wt});
   });
   ap.innerHTML=`<div class="card">
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
-      <div class="sl" style="margin-bottom:0">Phase imbalance alerts <span class="badge br" style="margin-left:6px">${high.length} high</span> <span class="badge ba" style="margin-left:4px">${med.length} medium</span></div>
+      <div class="sl" style="margin-bottom:0">Transformer temperature alerts <span class="badge br" style="margin-left:6px">${high.length} high</span> <span class="badge ba" style="margin-left:4px">${med.length} watch</span></div>
       ${(high.length||med.length)?`<button class="bs bsuc" onclick="exportAlerts()"><span aria-hidden="true">📄</span> Export alerts CSV</button>`:''}
     </div>
-    ${(!high.length&&!med.length)?'<div class="empty" style="padding:1rem">No imbalance alerts for current filter.</div>':''}
-    ${high.map(a=>`<div class="alert-row alert-high"><span aria-hidden="true">⚠</span><div style="flex:1"><span class="badge bb" style="margin-right:4px">${a.panel}</span><strong style="color:#791F1F">${a.feeder}</strong> <span style="color:#A32D2D">(${a.sub}, ${a.district})</span> — R:${a.pr}A Y:${a.py}A B:${a.pb}A — <strong style="color:#A32D2D">${a.imp}%</strong> <span style="color:#A32D2D;font-size:11px;margin-left:4px">${entryDateTime(a).date} ${entryDateTime(a).time}</span></div><span class="badge bam">High &gt;10%</span></div>`).join('')}
-    ${med.map(a=>`<div class="alert-row alert-med"><span aria-hidden="true">⚠</span><div style="flex:1"><span class="badge bb" style="margin-right:4px">${a.panel}</span><strong style="color:#412402">${a.feeder}</strong> <span style="color:#633806">(${a.sub}, ${a.district})</span> — R:${a.pr}A Y:${a.py}A B:${a.pb}A — <strong style="color:#633806">${a.imp}%</strong> <span style="color:#633806;font-size:11px;margin-left:4px">${entryDateTime(a).date} ${entryDateTime(a).time}</span></div><span class="badge ba">Medium 5–10%</span></div>`).join('')}
+    ${(!high.length&&!med.length)?'<div class="empty" style="padding:1rem">No transformer temperature alerts for current filter.</div>':''}
+    ${high.map(a=>`<div class="alert-row alert-high"><span aria-hidden="true">⚠</span><div style="flex:1"><strong style="color:#791F1F">${a.feeder}</strong> <span style="color:#A32D2D">(${a.sub})</span> — Oil <strong style="color:#A32D2D">${a.ot}°C</strong> / Winding <strong style="color:#A32D2D">${a.wt}°C</strong> <span style="color:#A32D2D;font-size:11px;margin-left:4px">${entryDateTime(a).date} ${entryDateTime(a).time}</span></div><span class="badge bam">High</span></div>`).join('')}
+    ${med.map(a=>`<div class="alert-row alert-med"><span aria-hidden="true">⚠</span><div style="flex:1"><strong style="color:#412402">${a.feeder}</strong> <span style="color:#633806">(${a.sub})</span> — Oil <strong style="color:#633806">${a.ot}°C</strong> / Winding <strong style="color:#633806">${a.wt}°C</strong> <span style="color:#633806;font-size:11px;margin-left:4px">${entryDateTime(a).date} ${entryDateTime(a).time}</span></div><span class="badge ba">Watch</span></div>`).join('')}
   </div>`;
 }
 
@@ -991,6 +1244,25 @@ function renderSubs(){
   const tb=g('tab-body');if(!tb)return;
   const rows=[...DB.submissions].reverse();
   const nPending=pendingCount();
+
+  // Totals per substation (today's data)
+  const td=today();
+  const todayRows=DB.submissions.filter(s=>entryDateTime(s).date===fmtDateDMY(td));
+  const subs=[...new Set(todayRows.map(s=>s.sub))];
+  let totalsHTML='';
+  if(subs.length){
+    totalsHTML=`<div style="margin-bottom:14px"><div class="sl">Today's totals by substation</div>${subs.map(sub=>{
+      const t=computeTotals(todayRows.filter(s=>s.sub===sub));
+      return`<div style="background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:6px">${sub}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+          <div style="background:#E6F1FB;border-radius:6px;padding:6px 10px"><div style="color:#0C447C;font-weight:600;font-size:11px">TOTAL INCOMERS</div><div>AMPS: <strong>${t.inAmps}</strong> &nbsp; MW: <strong>${t.inMW}</strong></div></div>
+          <div style="background:#E2F2EC;border-radius:6px;padding:6px 10px"><div style="color:#0F6E56;font-weight:600;font-size:11px">TOTAL OUTGOINGS</div><div>AMPS: <strong>${t.outAmps}</strong> &nbsp; MW: <strong>${t.outMW}</strong></div></div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+
   tb.innerHTML=`<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
     <button class="bs bp" onclick="exportAllCSV()">
       <span aria-hidden="true">⬇</span> Export all CSV</button>
@@ -998,12 +1270,11 @@ function renderSubs(){
       <span aria-hidden="true">☁⬆</span> Sync pending to Google Sheet${nPending?` (${nPending})`:''}</button>
     <span id="sync-status" style="font-size:12px;color:var(--color-text-secondary)"></span>
   </div>
+  ${totalsHTML}
   <div style="overflow-x:auto">
   ${!rows.length?'<div class="empty">No submissions yet.</div>':`
-  <table><thead><tr><th>Date</th><th>Time</th><th>User</th><th>District</th><th>Substation</th><th>Feeder</th><th colspan="4" style="text-align:center;background:#E6F1FB;color:#0C447C">33KV (R/Y/B/kV)</th><th colspan="4" style="text-align:center;background:#E2F2EC;color:#0F6E56">11KV (R/Y/B/kV)</th><th>Imb.</th><th>Sync</th><th>Remarks</th><th></th></tr></thead>
+  <table><thead><tr><th>Date</th><th>Time</th><th>User</th><th>Substation</th><th>Feeder</th><th>Type</th><th>kV</th><th>IR</th><th>IY</th><th>IB</th><th>Imax</th><th>MW</th><th>TAP</th><th>OT</th><th>WT</th><th>Sync</th><th>Remarks</th><th></th></tr></thead>
   <tbody>${rows.map(s=>{
-    const{worst}=panelImbalance(s);
-    const p=panelVals(s);
     const{date,time}=entryDateTime(s);
     const syncBadge=s.synced===false
       ?'<span class="badge ba" title="Pending upload"><span aria-hidden="true">☁⏸</span></span>'
@@ -1012,21 +1283,22 @@ function renderSubs(){
     const userCell=userObj&&userObj.phone
       ?`<span class="badge ba">${s.user}</span><br><a href="tel:${userObj.phone}" style="font-size:10px;color:var(--color-text-info);text-decoration:none;white-space:nowrap"><span aria-hidden="true">📞</span> ${userObj.phone}</a>`
       :`<span class="badge ba">${s.user}</span>`;
-    return`<tr><td style="white-space:nowrap;font-size:11px">${date}</td><td style="white-space:nowrap;font-weight:500;font-size:11px">${time}</td><td>${userCell}</td><td>${s.district}</td><td>${s.sub}</td><td><span class="badge bb">${s.feeder}</span></td><td style="background:rgba(230,241,251,0.35)">${p.r33}</td><td style="background:rgba(230,241,251,0.35)">${p.y33}</td><td style="background:rgba(230,241,251,0.35)">${p.b33}</td><td style="background:rgba(230,241,251,0.35)">${p.kv33}</td><td style="background:rgba(226,242,236,0.35)">${p.r11}</td><td style="background:rgba(226,242,236,0.35)">${p.y11}</td><td style="background:rgba(226,242,236,0.35)">${p.b11}</td><td style="background:rgba(226,242,236,0.35)">${p.kv11}</td><td><span class="badge ${worst>=10?'bam':worst>=5?'ba':'bok'}">${worst}%</span></td><td>${syncBadge}</td><td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.remarks||'—'}</td><td><button class="bs bd" onclick="delEntry('${s.id}')"><span aria-hidden="true">🗑</span></button></td></tr>`;
+    const tcolor=is33(s)?'#0C447C':'#0F6E56';
+    return`<tr><td style="white-space:nowrap;font-size:11px">${date}</td><td style="white-space:nowrap;font-weight:500;font-size:11px">${time}</td><td>${userCell}</td><td>${s.sub}</td><td><span class="badge bb">${s.feeder}</span></td><td style="font-size:10px;color:${tcolor};font-weight:600">${fTypeLabel(s)}</td><td>${s.kv!=null?s.kv:'—'}</td><td>${s.ir!=null?s.ir:'—'}</td><td>${s.iy!=null?s.iy:'—'}</td><td>${s.ib!=null?s.ib:'—'}</td><td style="font-weight:600">${s.imax!=null?s.imax:'—'}</td><td style="font-weight:600;color:#185FA5">${s.mw!=null?s.mw:'—'}</td><td>${s.tap!=null?s.tap:'—'}</td><td>${s.oiltemp!=null?s.oiltemp:'—'}</td><td>${s.windtemp!=null?s.windtemp:'—'}</td><td>${syncBadge}</td><td style="max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.remarks||'—'}</td><td><button class="bs bd" onclick="delEntry('${s.id}')"><span aria-hidden="true">🗑</span></button></td></tr>`;
   }).join('')}</tbody></table>`}</div>`;
 }
 
 function exportAllCSV(){
   const rows=DB.submissions.map(s=>{
-    const p=panelVals(s);const{imb33,imb11}=panelImbalance(s);const{date,time}=entryDateTime(s);
+    const{date,time}=entryDateTime(s);
     return{date,time,user:s.user,district:s.district,sub:s.sub,feeder:s.feeder,
-      r33:p.r33,y33:p.y33,b33:p.b33,kv33:p.kv33,imb33,
-      r11:p.r11,y11:p.y11,b11:p.b11,kv11:p.kv11,imb11,
-      remarks:s.remarks||''};
+      ftype:fTypeLabel(s),kv:s.kv!=null?s.kv:'',ir:s.ir,iy:s.iy,ib:s.ib,
+      imax:s.imax,mw:s.mw!=null?s.mw:'',tap:s.tap!=null?s.tap:'',
+      oiltemp:s.oiltemp!=null?s.oiltemp:'',windtemp:s.windtemp!=null?s.windtemp:'',remarks:s.remarks||''};
   });
   dlCSV(rows,
-    ['Date','Time','User','District','Substation','Feeder','33KV R(A)','33KV Y(A)','33KV B(A)','33KV V(kV)','33KV Imb(%)','11KV R(A)','11KV Y(A)','11KV B(A)','11KV V(kV)','11KV Imb(%)','Remarks'],
-    ['date','time','user','district','sub','feeder','r33','y33','b33','kv33','imb33','r11','y11','b11','kv11','imb11','remarks'],
+    ['Date','Time','User','District','Substation','Feeder','Type','kV','IR','IY','IB','Imax','MW','TAP','Oil Temp','Wind Temp','Remarks'],
+    ['date','time','user','district','sub','feeder','ftype','kv','ir','iy','ib','imax','mw','tap','oiltemp','windtemp','remarks'],
     'all-submissions-'+today());
 }
 
