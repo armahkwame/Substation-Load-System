@@ -280,8 +280,8 @@ function startSyncEngine(){
 const DEMO_TS=['2026-06-08T06:00:00.000Z','2026-06-08T12:00:00.000Z','2026-06-08T18:00:00.000Z','2026-06-09T06:00:00.000Z','2026-06-09T12:00:00.000Z','2026-06-09T18:00:00.000Z','2026-06-10T06:00:00.000Z','2026-06-10T12:00:00.000Z'];
 const DEF={
   users:[
-    {id:'EK',pw:'ek123',role:'user',name:'EK',phone:'',districts:['SEKONDI']},
-    {id:'admin',pw:'admin2026',role:'admin',name:'Admin',phone:'',districts:[]}
+    {id:'EK',pw:'ek123',role:'user',name:'EK',phone:'',substations:['STATION A BSP']},
+    {id:'admin',pw:'admin2026',role:'admin',name:'Admin',phone:'',substations:[]}
   ],
   districts:['SEKONDI'],
   subs:{'SEKONDI':['STATION A BSP']},
@@ -651,6 +651,7 @@ async function doChangePw(){
   DB.submissions.forEach(s=>{if(s.user===SESSION.id)s.user=nu;});
   DB.users[idx].id=nu;
   DB.users[idx].name=name;
+  if(!DB.users[idx].substations)DB.users[idx].substations=DB.users[idx].districts||[];
   DB.users[idx].phone=phone;
   SESSION=DB.users[idx];save();
   showChangePw('Credentials updated successfully. You are still signed in.','');
@@ -767,18 +768,20 @@ function calcAuto(){
 
 function showForm(msg){
   selectedTime=null;useCustomTime=false;
-  const dists=SESSION.districts.length?SESSION.districts:DB.districts;
+  // Filter substations by user's assigned substations (blank = all)
+  const allSubs=Object.keys(DB.feeders);
+  const userSubs=SESSION.substations&&SESSION.substations.length?SESSION.substations:allSubs;
   mount(`<div style="max-width:600px;margin:0 auto;padding:1rem">
   ${topbar('Welcome, '+(SESSION.name||SESSION.id))}
   ${msg?`<div class="ok">${msg}</div>`:''}
   ${datetimeWidget()}
   <div class="card" style="margin-bottom:10px">
     <div class="sl">Location</div>
-    <div class="fg"><label class="lbl">District<span class="req-star">*</span></label>
-      <select id="fd" onchange="onDist();clearErr('fd')"><option value="">— select district —</option>${dists.map(d=>`<option>${d}</option>`).join('')}</select>
-      <div class="field-error-msg" id="err-fd" style="display:none"><span aria-hidden="true">⚠</span> District is required</div></div>
     <div class="fg"><label class="lbl">Substation<span class="req-star">*</span></label>
-      <select id="fs" onchange="onSub();clearErr('fs')" disabled><option value="">— select substation —</option></select>
+      <select id="fs" onchange="onSub();clearErr('fs')">
+        <option value="">— select substation —</option>
+        ${userSubs.map(s=>`<option>${s}</option>`).join('')}
+      </select>
       <div class="field-error-msg" id="err-fs" style="display:none"><span aria-hidden="true">⚠</span> Substation is required</div></div>
     <div class="fg" style="margin-bottom:0"><label class="lbl">Feeder<span class="req-star">*</span></label>
       <select id="ff" onchange="onFeederChange();clearErr('ff')" disabled><option value="">— select feeder —</option></select>
@@ -788,12 +791,15 @@ function showForm(msg){
   <div class="card">
     <div class="fg" style="margin-bottom:10px"><label class="lbl">Remarks</label><input id="fm" placeholder="Optional"></div>
     <div id="err-time" style="display:none;margin-bottom:10px" class="field-error-msg"><span aria-hidden="true">⚠</span> Please select a reading time slot or enter a custom time</div>
+    <div id="feeder-progress" style="display:none;font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:5px 8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)"></div>
     <div style="display:flex;gap:8px">
-      <button class="bp" style="flex:1" onclick="doSave()"><span aria-hidden="true">💾</span> Save entry</button>
+      <button class="bp" id="btn-send" style="flex:1" onclick="doSave(false)"><span aria-hidden="true">💾</span> Send Entry</button>
+      <button class="bsuc bs" id="btn-next" style="flex:1;padding:9px 14px;font-size:13px;font-weight:500" onclick="doSave(true)"><span aria-hidden="true">→</span> Next</button>
       <button onclick="clearF()" style="padding:7px 10px"><span aria-hidden="true">✕</span></button>
     </div>
   </div></div>`);
   startClock();
+  updateFeederProgress();
 }
 
 function onDist(){
@@ -808,11 +814,38 @@ function onSub(){
   f.innerHTML='<option value="">— select feeder —</option>';f.disabled=!s;
   if(s&&DB.feeders[s])DB.feeders[s].forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;f.appendChild(o);});
   g('feeder-fields').innerHTML='';
+  const prog=g('feeder-progress');if(prog)prog.style.display='none';
 }
+function updateFeederProgress(){
+  const sub=v('fs'), feeder=v('ff');
+  const prog=g('feeder-progress');
+  if(!prog||!sub)return;
+  const feeders=DB.feeders[sub]||[];
+  if(!feeders.length){prog.style.display='none';return;}
+  const idx=feeders.indexOf(feeder);
+  if(idx<0){prog.style.display='none';return;}
+  const done=DB.submissions.filter(s=>s.sub===sub&&entryDateTime(s).date===fmtDateDMY(today())).map(s=>s.feeder);
+  const donePct=Math.round((done.length/feeders.length)*100);
+  prog.style.display='block';
+  prog.innerHTML=`Feeder <strong>${idx+1} of ${feeders.length}</strong>: ${feeder}
+    &nbsp;|&nbsp; Today: <strong>${done.length}</strong> of ${feeders.length} submitted
+    ${idx<feeders.length-1?`&nbsp;|&nbsp; Next: <em>${feeders[idx+1]}</em>`:'&nbsp;|&nbsp; <strong style="color:var(--color-text-success)">Last feeder</strong>'}`;
+  // Update Next button label on last feeder
+  const btnNext=g('btn-next');
+  if(btnNext){
+    if(idx===feeders.length-1){
+      btnNext.innerHTML='<span aria-hidden="true">✓</span> Finish';
+    }else{
+      btnNext.innerHTML=`<span aria-hidden="true">→</span> Next`;
+    }
+  }
+}
+
 function onFeederChange(){
   const f=v('ff');
   if(!f){g('feeder-fields').innerHTML='';return;}
   renderFeederFields(f);
+  updateFeederProgress();
 }
 
 // ── Render the right fields based on feeder type ──
@@ -911,7 +944,7 @@ function calcLive(){
 }
 
 function clearF(){
-  ['fd','fs','ff','fm','fkv','fir','fiy','fib','ftap','foiltemp','fwindtemp'].forEach(i=>{const e=g(i);if(e)e.value='';});
+  ['fs','ff','fm','fkv','fir','fiy','fib','ftap','foiltemp','fwindtemp'].forEach(i=>{const e=g(i);if(e)e.value='';});
   if(g('fs'))g('fs').disabled=true;if(g('ff'))g('ff').disabled=true;
   if(g('feeder-fields'))g('feeder-fields').innerHTML='';
   selectedTime=null;useCustomTime=false;
@@ -942,16 +975,17 @@ function showToast(success,msg){
 
 
 
-async function doSave(){
-  const d=v('fd'),s=v('fs'),f=v('ff');
+async function doSave(goNext){
+  const s=v('fs'),f=v('ff');
+  // Derive district from selected substation
+  const d=Object.entries(DB.subs).find(([dist,subs])=>subs.includes(s))?.[0]||'';
   let valid=true;
 
   // Clear base errors
-  ['fd','fs','ff'].forEach(id=>clearErr(id));
+  ['fs','ff'].forEach(id=>clearErr(id));
   const te=g('err-time');if(te)te.style.display='none';
   const dtbox=g('datetime-box-el');if(dtbox)dtbox.classList.remove('field-error-box');
 
-  if(!d){markErr('fd');valid=false;}
   if(!s){markErr('fs');valid=false;}
   if(!f){markErr('ff');valid=false;}
 
@@ -993,8 +1027,10 @@ async function doSave(){
     return;
   }
 
-  const btn=document.querySelector('button.bp[onclick="doSave()"]');
-  if(btn){btn.disabled=true;btn.innerHTML='<span aria-hidden="true">⏳</span> Uploading…';}
+  // Disable both buttons while uploading
+  const btnSend=g('btn-send'),btnNext=g('btn-next');
+  if(btnSend){btnSend.disabled=true;btnSend.innerHTML='<span aria-hidden="true">⏳</span> Sending…';}
+  if(btnNext){btnNext.disabled=true;btnNext.innerHTML='<span aria-hidden="true">⏳</span> …';}
 
   const {date,time,ts}=buildDateAndTime();
 
@@ -1028,16 +1064,85 @@ async function doSave(){
     try{
       await uploadEntry(entry);
       entry.synced=true;save();
-      showToast(true,`Successfully uploaded — ${f} @ ${time} → ${s}, ${d}`);
-    }catch(err){
-      showToast(false,`Saved on device — auto-uploads when connection returns. (${pendingCount()} pending)`);
-    }
-  }else{
-    showToast(false,`No internet — saved on device. Auto-uploads when connection returns. (${pendingCount()} pending)`);
+    }catch(err){}
   }
   processSyncQueue();
-  if(btn){btn.disabled=false;btn.innerHTML='<span aria-hidden="true">💾</span> Save entry';}
-  setTimeout(()=>showForm(),2200);
+
+  // Re-enable buttons
+  if(btnSend){btnSend.disabled=false;btnSend.innerHTML='<span aria-hidden="true">💾</span> Send Entry';}
+  if(btnNext){btnNext.disabled=false;btnNext.innerHTML='<span aria-hidden="true">→</span> Next';}
+
+  // Determine what to do after save
+  if(goNext){
+    const feeders=DB.feeders[s]||[];
+    const idx=feeders.indexOf(f);
+    const nextFeeder=feeders[idx+1];
+
+    if(nextFeeder){
+      // Advance to next feeder — keep district/substation, change feeder
+      showToast(true,`✓ ${f} sent — moving to ${nextFeeder}`);
+      setTimeout(()=>{
+        // Re-render form, then select next feeder (no district step needed)
+        showForm();
+        setTimeout(()=>{
+          const fsEl=g('fs'),ffEl=g('ff');
+          if(fsEl)fsEl.value=s;
+          onSub();
+          setTimeout(()=>{
+            if(ffEl)ffEl.value=nextFeeder;
+            onFeederChange();
+            window.scrollTo({top:0,behavior:'smooth'});
+          },100);
+        },150);
+      },1200);
+    }else{
+      // Last feeder — show completion summary
+      const todayEntries=DB.submissions.filter(x=>x.sub===s&&entryDateTime(x).date===fmtDateDMY(today()));
+      const tots=computeTotals(todayEntries);
+      showToast(true,`✓ All ${feeders.length} feeders for ${s} completed!`);
+      setTimeout(()=>{
+        mount(`<div style="max-width:540px;margin:0 auto;padding:1.2rem 1rem">
+        ${topbar('Session complete')}
+        <div class="card" style="text-align:center;padding:2rem 1.5rem;margin-bottom:12px">
+          <div style="font-size:40px;margin-bottom:8px">✅</div>
+          <div style="font-size:17px;font-weight:600;margin-bottom:4px">All feeders completed</div>
+          <div style="font-size:13px;color:var(--color-text-secondary)">${s} — ${fmtDateDMY(today())}</div>
+        </div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="sl" style="margin-bottom:10px">Today's totals for ${s}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div style="background:#E6F1FB;border-radius:8px;padding:12px;text-align:center">
+              <div style="font-size:11px;font-weight:600;color:#0C447C;margin-bottom:4px">TOTAL INCOMERS</div>
+              <div style="font-size:18px;font-weight:700;color:#0C447C">${tots.inAmps} A</div>
+              <div style="font-size:13px;color:#185FA5">${tots.inMW} MW</div>
+            </div>
+            <div style="background:#E2F2EC;border-radius:8px;padding:12px;text-align:center">
+              <div style="font-size:11px;font-weight:600;color:#0F6E56;margin-bottom:4px">TOTAL OUTGOINGS</div>
+              <div style="font-size:18px;font-weight:700;color:#0F6E56">${tots.outAmps} A</div>
+              <div style="font-size:13px;color:#0F6E56">${tots.outMW} MW</div>
+            </div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:var(--color-text-secondary);text-align:center">
+            ${todayEntries.length} feeder readings submitted &nbsp;|&nbsp;
+            ${todayEntries.filter(x=>x.synced).length} uploaded to Google Sheet
+            ${pendingCount()>0?`&nbsp;|&nbsp; <span style="color:var(--color-text-warning)">${pendingCount()} pending</span>`:''}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="bp" style="flex:1" onclick="showForm()">
+            <span aria-hidden="true">+</span> New entry
+          </button>
+          <button class="bs" style="flex:1" onclick="showHistory()">
+            <span aria-hidden="true">🕒</span> View history
+          </button>
+        </div></div>`);
+      },1500);
+    }
+  }else{
+    // Send Entry only — show toast then reset for same substation
+    showToast(true,`Successfully uploaded — ${f} @ ${time} → ${s}`);
+    setTimeout(()=>showForm(),2000);
+  }
 }
 
 
@@ -1324,23 +1429,24 @@ function delEntry(id){if(!confirm('Delete this entry?'))return;DB.submissions=DB
 /* ── USERS TAB ── */
 function renderUsers(){
   const tb=g('tab-body');if(!tb)return;
+  const allSubOpts=[...new Set(Object.values(DB.subs).flat())].map(s=>`<option>${s}</option>`).join('');
   tb.innerHTML=`<div style="margin-bottom:16px"><div class="sl">Add new user</div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end">
       <div><label class="lbl">Full Name</label><input id="nuname" placeholder="e.g. Kwame Asante"></div>
       <div><label class="lbl">Username</label><input id="nuid" placeholder="e.g. KA"></div>
       <div><label class="lbl">Password</label><input id="nupw" type="password" placeholder="password"></div>
-      <div><label class="lbl">Districts (comma-sep, blank=all)</label><input id="nudist" placeholder="e.g. TAKORADI"></div>
+      <div><label class="lbl">Substation (blank=all)</label><select id="nusub"><option value="">All substations</option>${allSubOpts}</select></div>
       <div><label class="lbl">Phone</label><input id="nuphone" type="tel" placeholder="e.g. 0244123456"></div>
       <button class="bp bs" onclick="addUser()" style="margin-top:14px"><span aria-hidden="true">+</span> Add</button>
     </div></div>
   <div class="sl">Existing users</div>
-  <table><thead><tr><th>Full Name</th><th>Username</th><th>Role</th><th>Phone</th><th>Districts</th><th>Entries</th><th>Actions</th></tr></thead>
+  <table><thead><tr><th>Full Name</th><th>Username</label><th>Role</th><th>Phone</th><th>Substation</th><th>Entries</th><th>Actions</th></tr></thead>
   <tbody id="utbody">${usersRows()}</tbody></table>`;
 }
-function usersRows(){return DB.users.map(u=>`<tr id="urow-${u.id}"><td>${u.name?u.name:'<em style="color:var(--color-text-secondary)">—</em>'}</td><td><strong>${u.id}</strong></td><td><span class="badge ${u.role==='admin'?'br':'bg2'}">${u.role}</span></td><td style="font-size:12px">${u.phone?`<a href="tel:${u.phone}" style="color:var(--color-text-info);text-decoration:none"><span aria-hidden="true">📞</span> ${u.phone}</a>`:'<em style="color:var(--color-text-secondary)">—</em>'}</td><td style="font-size:12px">${u.districts.length?u.districts.join(', '):'<em style="color:var(--color-text-secondary)">All</em>'}</td><td>${DB.submissions.filter(s=>s.user===u.id).length}</td><td><div style="display:flex;gap:5px"><button class="bs bp" onclick="editUserRow('${u.id}')"><span aria-hidden="true">✎</span> Edit</button>${u.role!=='admin'?`<button class="bs bd" onclick="delUser('${u.id}')"><span aria-hidden="true">🗑</span></button>`:''}</div></td></tr>`).join('');}
-function editUserRow(uid){const u=DB.users.find(x=>x.id===uid);if(!u)return;const row=g('urow-'+uid);if(!row)return;row.innerHTML=`<td colspan="7"><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;padding:4px 0"><div><label class="lbl">Full Name</label><input id="eu-name" value="${u.name||''}" placeholder="e.g. Kwame Asante"></div><div><label class="lbl">Username</label><input id="eu-id" value="${u.id}"></div><div><label class="lbl">Password (blank=keep)</label><input id="eu-pw" type="password" placeholder="leave blank"></div><div><label class="lbl">Phone</label><input id="eu-phone" type="tel" value="${u.phone||''}" placeholder="e.g. 0244123456"></div><div><label class="lbl">Districts</label><input id="eu-dist" value="${u.districts.join(',')}"></div><div><label class="lbl">Role</label><select id="eu-role"><option value="user" ${u.role==='user'?'selected':''}>user</option><option value="admin" ${u.role==='admin'?'selected':''}>admin</option></select></div><div style="display:flex;gap:5px;margin-top:14px"><button class="bs bp" onclick="saveEditUser('${u.id}')"><span aria-hidden="true">✓</span> Save</button><button class="bs" onclick="renderUsers()">Cancel</button></div></div></td>`;}
+function usersRows(){return DB.users.map(u=>`<tr id="urow-${u.id}"><td>${u.name?u.name:'<em style="color:var(--color-text-secondary)">—</em>'}</td><td><strong>${u.id}</strong></td><td><span class="badge ${u.role==='admin'?'br':'bg2'}">${u.role}</span></td><td style="font-size:12px">${u.phone?`<a href="tel:${u.phone}" style="color:var(--color-text-info);text-decoration:none"><span aria-hidden="true">📞</span> ${u.phone}</a>`:'<em style="color:var(--color-text-secondary)">—</em>'}</td><td style="font-size:12px">${(u.substations&&u.substations.length)?u.substations.join(', '):'<em style="color:var(--color-text-secondary)">All</em>'}</td><td>${DB.submissions.filter(s=>s.user===u.id).length}</td><td><div style="display:flex;gap:5px"><button class="bs bp" onclick="editUserRow('${u.id}')"><span aria-hidden="true">✎</span> Edit</button>${u.role!=='admin'?`<button class="bs bd" onclick="delUser('${u.id}')"><span aria-hidden="true">🗑</span></button>`:''}</div></td></tr>`).join('');}
+function editUserRow(uid){const u=DB.users.find(x=>x.id===uid);if(!u)return;const row=g('urow-'+uid);if(!row)return;row.innerHTML=`<td colspan="7"><div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr 1fr 1fr auto;gap:8px;align-items:end;padding:4px 0"><div><label class="lbl">Full Name</label><input id="eu-name" value="${u.name||''}" placeholder="e.g. Kwame Asante"></div><div><label class="lbl">Username</label><input id="eu-id" value="${u.id}"></div><div><label class="lbl">Password (blank=keep)</label><input id="eu-pw" type="password" placeholder="leave blank"></div><div><label class="lbl">Phone</label><input id="eu-phone" type="tel" value="${u.phone||''}" placeholder="e.g. 0244123456"></div><div><label class="lbl">Substation</label><select id="eu-sub"><option value="">All substations</option>${[...new Set(Object.values(DB.subs).flat())].map(sub=>`<option value="${sub}" ${(u.substations&&u.substations.includes(sub))?'selected':''}>${sub}</option>`).join('')}</select></div><div><label class="lbl">Role</label><select id="eu-role"><option value="user" ${u.role==='user'?'selected':''}>user</option><option value="admin" ${u.role==='admin'?'selected':''}>admin</option></select></div><div style="display:flex;gap:5px;margin-top:14px"><button class="bs bp" onclick="saveEditUser('${u.id}')"><span aria-hidden="true">✓</span> Save</button><button class="bs" onclick="renderUsers()">Cancel</button></div></div></td>`;}
 async function saveEditUser(oldId){
-  const ni=v('eu-id').trim().toUpperCase(),np=v('eu-pw').trim(),nd=v('eu-dist').trim(),nr=v('eu-role'),phone=v('eu-phone').trim(),name=v('eu-name').trim();
+  const ni=v('eu-id').trim().toUpperCase(),np=v('eu-pw').trim(),esub=v('eu-sub'),nr=v('eu-role'),phone=v('eu-phone').trim(),name=v('eu-name').trim();
   if(!ni){alert('Username cannot be empty.');return;}
   if(ni!==oldId&&DB.users.find(u=>u.id===ni)){alert('Username already taken.');return;}
   if(np&&np.length<6){alert('Password must be at least 6 characters.');return;}
@@ -1349,19 +1455,20 @@ async function saveEditUser(oldId){
   DB.users[idx].id=ni;
   if(np){DB.users[idx].pw=await sha256(np);}
   DB.users[idx].name=name;
+  if(!DB.users[idx].substations)DB.users[idx].substations=DB.users[idx].districts||[];
   DB.users[idx].phone=phone;
-  DB.users[idx].districts=nd?nd.split(',').map(d=>d.trim().toUpperCase()).filter(Boolean):[];
+  DB.users[idx].substations=esub?[esub]:[];
   DB.users[idx].role=nr;
   if(SESSION.id===oldId)SESSION=DB.users[idx];
   save();renderUsers();
 }
 async function addUser(){
-  const id=v('nuid').trim().toUpperCase(),pw=v('nupw').trim(),dr=v('nudist').trim(),phone=v('nuphone').trim(),name=v('nuname').trim();
+  const id=v('nuid').trim().toUpperCase(),pw=v('nupw').trim(),nsub=v('nusub'),phone=v('nuphone').trim(),name=v('nuname').trim();
   if(!id||!pw){alert('Username and password required.');return;}
   if(pw.length<6){alert('Password must be at least 6 characters.');return;}
   if(DB.users.find(u=>u.id===id)){alert('Username already exists.');return;}
   const hashed=await sha256(pw);
-  DB.users.push({id,pw:hashed,role:'user',name,phone,districts:dr?dr.split(',').map(d=>d.trim().toUpperCase()).filter(Boolean):[]});
+  DB.users.push({id,pw:hashed,role:'user',name,phone,substations:nsub?[nsub]:[]});
   save();renderUsers();
 }
 function delUser(id){if(!confirm(`Delete user ${id}?`))return;DB.users=DB.users.filter(u=>u.id!==id);save();renderUsers();}
@@ -1474,6 +1581,10 @@ async function initPasswords(){
       changed=true;
     }
   }
+  // Migrate old district-based users to substation-based
+  let migrated2=false;
+  DB.users.forEach(u=>{if(!u.substations){u.substations=[];migrated2=true;}});
+  if(migrated2)save();
   if(changed)save();
   showLogin();
 }
