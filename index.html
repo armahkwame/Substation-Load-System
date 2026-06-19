@@ -342,6 +342,13 @@ function calcMW(kv,imax){
 }
 
 let DB,SESSION,adminTab='charts',chartInst={},clockTimer=null,selectedTime=null,useCustomTime=false;
+// ── Session batch: entries pending review before upload ──
+let SESSION_BATCH=[];
+// ── Batch time: time selected for first feeder, reused for all subsequent feeders in same batch ──
+let BATCH_TIME=null; // stores {selectedTime, useCustomTime, customTimeValue} from first entry
+// ── Batch location: substation and next feeder to auto-select on form reload ──
+let BATCH_SUB=null;
+let BATCH_NEXT_FEEDER=null;
 let F_DISTRICT='',F_SUB='',F_FEEDER=''; // persistent chart filter state
 
 function load(){try{const r=localStorage.getItem(SK);if(r)return JSON.parse(r);}catch(e){}return JSON.parse(JSON.stringify(DEF));}
@@ -596,7 +603,7 @@ async function doLogin(){
     return;
   }
   recordSuccess(u);
-  SESSION=found;selectedTime=null;useCustomTime=false;
+  SESSION=found;selectedTime=null;useCustomTime=false;SESSION_BATCH=[];BATCH_TIME=null;BATCH_SUB=null;BATCH_NEXT_FEEDER=null;
   found.role==='admin'?showAdmin():showForm();
   // Flush any pending offline entries on login
   processSyncQueue().then(r=>{
@@ -767,7 +774,12 @@ function calcAuto(){
 }
 
 function showForm(msg){
-  selectedTime=null;useCustomTime=false;
+  // Only reset time if starting a fresh batch (not mid-batch)
+  if(SESSION_BATCH.length===0){
+    selectedTime=null;useCustomTime=false;
+    BATCH_TIME=null;
+  }
+  // If mid-batch, restore time from BATCH_TIME after rendering
   // Filter substations by user's assigned substations (blank = all)
   const allSubs=Object.keys(DB.feeders);
   const userSubs=SESSION.substations&&SESSION.substations.length?SESSION.substations:allSubs;
@@ -792,14 +804,51 @@ function showForm(msg){
     <div class="fg" style="margin-bottom:10px"><label class="lbl">Remarks</label><input id="fm" placeholder="Optional"></div>
     <div id="err-time" style="display:none;margin-bottom:10px" class="field-error-msg"><span aria-hidden="true">⚠</span> Please select a reading time slot or enter a custom time</div>
     <div id="feeder-progress" style="display:none;font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:5px 8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)"></div>
+    <div id="batch-indicator" style="display:none;font-size:11px;padding:5px 8px;background:var(--color-background-info);color:var(--color-text-info);border-radius:var(--border-radius-md);margin-bottom:8px"></div>
     <div style="display:flex;gap:8px">
-      <button class="bp" id="btn-send" style="flex:1" onclick="doSave(false)"><span aria-hidden="true">💾</span> Send Entry</button>
+      <button class="bp" id="btn-send" style="flex:1" onclick="doSave(false)"><span aria-hidden="true">+</span> Add to batch</button>
       <button class="bsuc bs" id="btn-next" style="flex:1;padding:9px 14px;font-size:13px;font-weight:500" onclick="doSave(true)"><span aria-hidden="true">→</span> Next</button>
       <button onclick="clearF()" style="padding:7px 10px"><span aria-hidden="true">✕</span></button>
     </div>
+    ${SESSION_BATCH.length>0?`<div style="margin-top:10px"><button style="width:100%;padding:10px;font-size:13px;font-weight:600;background:#0F6E56;color:#fff;border:none;border-radius:var(--border-radius-md);cursor:pointer" onclick="showSummary()">Review &amp; Send All (${SESSION_BATCH.length} entr${SESSION_BATCH.length===1?'y':'ies'})</button></div>`:''}
   </div></div>`);
   startClock();
   updateFeederProgress();
+  // Auto-select substation and next feeder if mid-batch
+  if(BATCH_SUB){
+    const fsEl=g('fs');
+    if(fsEl){
+      fsEl.value=BATCH_SUB;
+      onSub();
+      if(BATCH_NEXT_FEEDER){
+        setTimeout(()=>{
+          const ffEl=g('ff');
+          if(ffEl){ffEl.value=BATCH_NEXT_FEEDER;onFeederChange();}
+          BATCH_NEXT_FEEDER=null; // clear after consuming
+        },80);
+      }
+    }
+  }
+  // Restore time from batch if mid-session
+  if(BATCH_TIME!==null){
+    selectedTime=BATCH_TIME.selectedTime;
+    useCustomTime=BATCH_TIME.useCustomTime;
+    if(BATCH_TIME.useCustomTime){
+      const ct=g('custom-time');
+      if(ct)ct.value=BATCH_TIME.customTimeValue;
+      // Re-trigger the custom active state on the slot button
+      document.querySelectorAll('.time-slot').forEach(el=>el.classList.remove('selected','custom-active'));
+      const customBtn=g('custom-slot');if(customBtn)customBtn.classList.add('custom-active');
+    } else if(BATCH_TIME.selectedTime!==null){
+      document.querySelectorAll('.time-slot').forEach((el,i)=>{
+        el.classList.toggle('selected',i===BATCH_TIME.selectedTime);
+      });
+    }
+    updateTimestampPreview();
+    // Show a subtle indicator that time is locked to batch
+    const preview=g('ts-preview');
+    if(preview)preview.innerHTML=`<span style="color:var(--color-text-success);font-weight:500">Time locked to batch: ${BATCH_TIME.timeLabel}</span> &nbsp;<button class="bs" style="font-size:10px;padding:2px 6px" onclick="clearBatchTime()">Change</button>`;
+  }
 }
 
 function onDist(){
@@ -815,6 +864,16 @@ function onSub(){
   if(s&&DB.feeders[s])DB.feeders[s].forEach(x=>{const o=document.createElement('option');o.value=x;o.textContent=x;f.appendChild(o);});
   g('feeder-fields').innerHTML='';
   const prog=g('feeder-progress');if(prog)prog.style.display='none';
+}
+function clearBatchTime(){
+  BATCH_TIME=null;
+  selectedTime=null;useCustomTime=false;
+  const ct=g('custom-time');
+  if(ct){const now=new Date();ct.value=`${pad(now.getHours())}:${pad(now.getMinutes())}`;}
+  document.querySelectorAll('.time-slot').forEach(el=>el.classList.remove('selected','custom-active'));
+  updateTimestampPreview();
+  const preview=g('ts-preview');
+  if(preview)preview.textContent='Reading will be recorded at current time if no slot selected';
 }
 function updateFeederProgress(){
   const sub=v('fs'), feeder=v('ff');
@@ -876,10 +935,10 @@ function renderFeederFields(feeder){
       <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
     </div>`;
   } else if(type==='33KV_OUT'){
-    const lastKV=latestKV(v('fs'),'33KV');
+    const lastKV=latestKVFromBatch(v('fs'),'33KV')||latestKV(v('fs'),'33KV');
     ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #185FA5">
       <div class="sl" style="color:#185FA5">33KV Outgoing — ${feeder}</div>
-      ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest incomer KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No incomer KV recorded today — MW cannot be calculated</div>'}
+      ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest incomer KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No incomer KV in batch yet — MW will be calculated at summary using the incomer KV</div>'}
       <div class="r3">${numInput('fir','IR (A)','0.0')}${numInput('fiy','IY (A)','0.0')}${numInput('fib','IB (A)','0.0')}</div>
       <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
     </div>`;
@@ -911,10 +970,10 @@ function renderFeederFields(feeder){
       </div>
     </div>`;
   } else if(type==='11KV_OUT'){
-    const lastKV=latestKV(v('fs'),'11KV');
+    const lastKV=latestKVFromBatch(v('fs'),'11KV')||latestKV(v('fs'),'11KV');
     ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #0F6E56">
       <div class="sl" style="color:#0F6E56">11KV Outgoing — ${feeder}</div>
-      ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest TRAFO KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No TRAFO KV recorded today — MW cannot be calculated</div>'}
+      ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest TRAFO KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No TRAFO KV in batch yet — MW will be calculated at summary using the TRAFO KV</div>'}
       <div class="r3">${numInput('fir','IR (A)','0.0')}${numInput('fiy','IY (A)','0.0')}${numInput('fib','IB (A)','0.0')}</div>
       <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
     </div>`;
@@ -935,22 +994,25 @@ function calcLive(){
   if(type==='33KV_INCOMER'||type==='11KV_TRAFO'){
     kv=parseFloat(v('fkv'))||null;
   } else if(type==='33KV_OUT'){
-    kv=latestKV(v('fs'),'33KV');
+    kv=latestKVFromBatch(v('fs'),'33KV')||latestKV(v('fs'),'33KV');
   } else if(type==='11KV_OUT'){
-    kv=latestKV(v('fs'),'11KV');
+    kv=latestKVFromBatch(v('fs'),'11KV')||latestKV(v('fs'),'11KV');
   }
   const mw=calcMW(kv,imax);
-  if(mwEl)mwEl.value=mw!==null?mw.toString():'—';
+  if(mwEl)mwEl.value=kv&&imax?mw.toString():'—';
 }
 
 function clearF(){
   ['fs','ff','fm','fkv','fir','fiy','fib','ftap','foiltemp','fwindtemp'].forEach(i=>{const e=g(i);if(e)e.value='';});
   if(g('fs'))g('fs').disabled=true;if(g('ff'))g('ff').disabled=true;
   if(g('feeder-fields'))g('feeder-fields').innerHTML='';
-  selectedTime=null;useCustomTime=false;
-  document.querySelectorAll('.time-slot').forEach(el=>{el.classList.remove('selected','custom-active');});
-  const ct=g('custom-time');if(ct){const now=new Date();ct.value=`${pad(now.getHours())}:${pad(now.getMinutes())}`;}
-  updateTimestampPreview();
+  // Only reset time if no batch in progress
+  if(SESSION_BATCH.length===0){
+    selectedTime=null;useCustomTime=false;BATCH_TIME=null;
+    document.querySelectorAll('.time-slot').forEach(el=>{el.classList.remove('selected','custom-active');});
+    const ct=g('custom-time');if(ct){const now=new Date();ct.value=`${pad(now.getHours())}:${pad(now.getMinutes())}`;}
+    updateTimestampPreview();
+  }
 }
 
 function clearErr(id){
@@ -977,11 +1039,9 @@ function showToast(success,msg){
 
 async function doSave(goNext){
   const s=v('fs'),f=v('ff');
-  // Derive district from selected substation
   const d=Object.entries(DB.subs).find(([dist,subs])=>subs.includes(s))?.[0]||'';
   let valid=true;
 
-  // Clear base errors
   ['fs','ff'].forEach(id=>clearErr(id));
   const te=g('err-time');if(te)te.style.display='none';
   const dtbox=g('datetime-box-el');if(dtbox)dtbox.classList.remove('field-error-box');
@@ -989,7 +1049,6 @@ async function doSave(goNext){
   if(!s){markErr('fs');valid=false;}
   if(!f){markErr('ff');valid=false;}
 
-  // Feeder-type specific validation
   const type=feederType(f);
   const ir=v('fir'),iy=v('fiy'),ib=v('fib');
   const kv=v('fkv'),tap=v('ftap'),oiltemp=v('foiltemp'),windtemp=v('fwindtemp');
@@ -999,11 +1058,7 @@ async function doSave(goNext){
     if(!ir){markErr('fir');valid=false;}
     if(!iy){markErr('fiy');valid=false;}
     if(!ib){markErr('fib');valid=false;}
-
-    if(type==='33KV_INCOMER'||type==='11KV_TRAFO'){
-      clearErr('fkv');
-      if(!kv){markErr('fkv');valid=false;}
-    }
+    if(type==='33KV_INCOMER'||type==='11KV_TRAFO'){clearErr('fkv');if(!kv){markErr('fkv');valid=false;}}
     if(type==='11KV_TRAFO'){
       clearErr('ftap');clearErr('foiltemp');clearErr('fwindtemp');
       if(tap===''){markErr('ftap');valid=false;}
@@ -1012,7 +1067,6 @@ async function doSave(goNext){
     }
   }
 
-  // Validate time selection
   const timeSelected=selectedTime!==null||useCustomTime;
   if(!timeSelected){
     if(te)te.style.display='flex';
@@ -1027,122 +1081,256 @@ async function doSave(goNext){
     return;
   }
 
-  // Disable both buttons while uploading
-  const btnSend=g('btn-send'),btnNext=g('btn-next');
-  if(btnSend){btnSend.disabled=true;btnSend.innerHTML='<span aria-hidden="true">⏳</span> Sending…';}
-  if(btnNext){btnNext.disabled=true;btnNext.innerHTML='<span aria-hidden="true">⏳</span> …';}
-
   const {date,time,ts}=buildDateAndTime();
-
-  // Compute Imax and MW
   const imax=calcImax(+ir,+iy,+ib);
   let kvForMW=null;
   if(type==='33KV_INCOMER'||type==='11KV_TRAFO') kvForMW=parseFloat(kv)||null;
-  else if(type==='33KV_OUT') kvForMW=latestKV(s,'33KV');
-  else if(type==='11KV_OUT') kvForMW=latestKV(s,'11KV');
+  else if(type==='33KV_OUT') kvForMW=latestKVFromBatch(s,'33KV')||latestKV(s,'33KV');
+  else if(type==='11KV_OUT') kvForMW=latestKVFromBatch(s,'11KV')||latestKV(s,'11KV');
   const mw=calcMW(kvForMW,imax);
 
   const entry={
     id:uid(),user:SESSION.id,district:d,sub:s,feeder:f,
     feederType:type,
-    ir:+ir,iy:+iy,ib:+ib,
-    imax,mw,
+    ir:+ir,iy:+iy,ib:+ib,imax,mw,
     kv:kv?parseFloat(kv):null,
     tap:type==='11KV_TRAFO'?parseInt(tap):null,
     oiltemp:type==='11KV_TRAFO'?parseFloat(oiltemp):null,
     windtemp:type==='11KV_TRAFO'?parseFloat(windtemp):null,
     remarks:v('fm'),
     date,time,ts,
-    synced:false
+    synced:false,
+    pending:true   // flagged as batch-pending, not yet uploaded
   };
 
-  DB.submissions.push(entry);
-  save();
-  selectedTime=null;useCustomTime=false;
+  // Remove any previous batch entry for this feeder (allow editing by re-adding)
+  SESSION_BATCH=SESSION_BATCH.filter(e=>!(e.feeder===f&&e.sub===s));
+  SESSION_BATCH.push(entry);
 
-  if(navigator.onLine){
-    try{
-      await uploadEntry(entry);
-      entry.synced=true;save();
-    }catch(err){}
+  // Capture the time on the FIRST entry of the batch so all subsequent feeders use it
+  if(SESSION_BATCH.length===1||BATCH_TIME===null){
+    const ct=g('custom-time');
+    BATCH_TIME={
+      selectedTime,
+      useCustomTime,
+      customTimeValue:ct?ct.value:'',
+      timeLabel:time
+    };
   }
-  processSyncQueue();
+  // Do NOT clear selectedTime/useCustomTime — preserved for next feeder via BATCH_TIME restore
 
-  // Re-enable buttons
-  if(btnSend){btnSend.disabled=false;btnSend.innerHTML='<span aria-hidden="true">💾</span> Send Entry';}
-  if(btnNext){btnNext.disabled=false;btnNext.innerHTML='<span aria-hidden="true">→</span> Next';}
-
-  // Determine what to do after save
   if(goNext){
     const feeders=DB.feeders[s]||[];
     const idx=feeders.indexOf(f);
     const nextFeeder=feeders[idx+1];
 
     if(nextFeeder){
-      // Advance to next feeder — keep district/substation, change feeder
-      showToast(true,`✓ ${f} sent — moving to ${nextFeeder}`);
-      setTimeout(()=>{
-        // Re-render form, then select next feeder (no district step needed)
-        showForm();
-        setTimeout(()=>{
-          const fsEl=g('fs'),ffEl=g('ff');
-          if(fsEl)fsEl.value=s;
-          onSub();
-          setTimeout(()=>{
-            if(ffEl)ffEl.value=nextFeeder;
-            onFeederChange();
-            window.scrollTo({top:0,behavior:'smooth'});
-          },100);
-        },150);
-      },1200);
+      showToast(true,`✓ ${f} added — ${SESSION_BATCH.length} entr${SESSION_BATCH.length===1?'y':'ies'} in batch`);
+      BATCH_SUB=s;
+      BATCH_NEXT_FEEDER=nextFeeder;
+      setTimeout(()=>showForm(),800);
     }else{
-      // Last feeder — show completion summary
-      const todayEntries=DB.submissions.filter(x=>x.sub===s&&entryDateTime(x).date===fmtDateDMY(today()));
-      const tots=computeTotals(todayEntries);
-      showToast(true,`✓ All ${feeders.length} feeders for ${s} completed!`);
-      setTimeout(()=>{
-        mount(`<div style="max-width:540px;margin:0 auto;padding:1.2rem 1rem">
-        ${topbar('Session complete')}
-        <div class="card" style="text-align:center;padding:2rem 1.5rem;margin-bottom:12px">
-          <div style="font-size:40px;margin-bottom:8px">✅</div>
-          <div style="font-size:17px;font-weight:600;margin-bottom:4px">All feeders completed</div>
-          <div style="font-size:13px;color:var(--color-text-secondary)">${s} — ${fmtDateDMY(today())}</div>
-        </div>
-        <div class="card" style="margin-bottom:12px">
-          <div class="sl" style="margin-bottom:10px">Today's totals for ${s}</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
-            <div style="background:#E6F1FB;border-radius:8px;padding:12px;text-align:center">
-              <div style="font-size:11px;font-weight:600;color:#0C447C;margin-bottom:4px">TOTAL INCOMERS</div>
-              <div style="font-size:18px;font-weight:700;color:#0C447C">${tots.inAmps} A</div>
-              <div style="font-size:13px;color:#185FA5">${tots.inMW} MW</div>
-            </div>
-            <div style="background:#E2F2EC;border-radius:8px;padding:12px;text-align:center">
-              <div style="font-size:11px;font-weight:600;color:#0F6E56;margin-bottom:4px">TOTAL OUTGOINGS</div>
-              <div style="font-size:18px;font-weight:700;color:#0F6E56">${tots.outAmps} A</div>
-              <div style="font-size:13px;color:#0F6E56">${tots.outMW} MW</div>
-            </div>
-          </div>
-          <div style="margin-top:10px;font-size:12px;color:var(--color-text-secondary);text-align:center">
-            ${todayEntries.length} feeder readings submitted &nbsp;|&nbsp;
-            ${todayEntries.filter(x=>x.synced).length} uploaded to Google Sheet
-            ${pendingCount()>0?`&nbsp;|&nbsp; <span style="color:var(--color-text-warning)">${pendingCount()} pending</span>`:''}
-          </div>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="bp" style="flex:1" onclick="showForm()">
-            <span aria-hidden="true">+</span> New entry
-          </button>
-          <button class="bs" style="flex:1" onclick="showHistory()">
-            <span aria-hidden="true">🕒</span> View history
-          </button>
-        </div></div>`);
-      },1500);
+      // Last feeder — go straight to summary
+      showToast(true,`✓ ${f} added — all feeders captured`);
+      setTimeout(()=>showSummary(s),800);
     }
   }else{
-    // Send Entry only — show toast then reset for same substation
-    showToast(true,`Successfully uploaded — ${f} @ ${time} → ${s}`);
-    setTimeout(()=>showForm(),2000);
+    // "Add to batch" without advancing — stay on same substation
+    showToast(true,`✓ ${f} added to batch (${SESSION_BATCH.length} entr${SESSION_BATCH.length===1?'y':'ies'} total)`);
+    BATCH_SUB=s;
+    BATCH_NEXT_FEEDER=null; // don't auto-advance feeder, just keep substation
+    setTimeout(()=>showForm(),1000);
   }
+}
+
+// Get the latest KV from the current SESSION_BATCH (before DB is updated)
+function latestKVFromBatch(sub,panel){
+  const relevant=SESSION_BATCH.filter(e=>e.sub===sub);
+  if(panel==='33KV'){
+    const inc=relevant.filter(e=>e.feederType==='33KV_INCOMER'&&e.kv);
+    return inc.length?inc[inc.length-1].kv:null;
+  }
+  if(panel==='11KV'){
+    const trf=relevant.filter(e=>e.feederType==='11KV_TRAFO'&&e.kv);
+    return trf.length?trf[trf.length-1].kv:null;
+  }
+  return null;
+}
+
+// ── Show summary screen before final batch upload ──
+function showSummary(sub){
+  if(!SESSION_BATCH.length){showForm();return;}
+  const s=sub||SESSION_BATCH[0].sub;
+
+  // ── Recalculate MW for all outgoing entries now that full batch is available ──
+  // Find the best incomer KV and trafo KV from the complete batch
+  const incomers=SESSION_BATCH.filter(e=>e.feederType==='33KV_INCOMER'&&e.kv!=null);
+  const trafos=SESSION_BATCH.filter(e=>e.feederType==='11KV_TRAFO'&&e.kv!=null);
+  const best33KV=incomers.length?incomers[incomers.length-1].kv:null;
+  const best11KV=trafos.length?trafos[trafos.length-1].kv:null;
+
+  SESSION_BATCH.forEach(e=>{
+    const t=e.feederType||feederType(e.feeder);
+    if(t==='33KV_OUT'&&best33KV!=null){
+      e.mw=calcMW(best33KV,e.imax);
+    }else if(t==='11KV_OUT'&&best11KV!=null){
+      e.mw=calcMW(best11KV,e.imax);
+    }
+  });
+
+  const tots=computeTotals(SESSION_BATCH.filter(e=>e.sub===s));
+
+  function rowColor(e){
+    const t=e.feederType||feederType(e.feeder);
+    if(t==='33KV_INCOMER')return'background:rgba(230,241,251,0.5)';
+    if(t==='33KV_OUT')return'background:rgba(230,241,251,0.25)';
+    if(t==='11KV_TRAFO')return'background:rgba(226,242,236,0.5)';
+    return'background:rgba(226,242,236,0.25)';
+  }
+
+  mount(`<div style="max-width:700px;margin:0 auto;padding:1rem">
+  ${topbar('Review before sending')}
+
+  <!-- Totals -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <div style="background:#E6F1FB;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:11px;font-weight:600;color:#0C447C;margin-bottom:4px">TOTAL INCOMERS</div>
+      <div style="font-size:20px;font-weight:700;color:#0C447C">${tots.inAmps} A</div>
+      <div style="font-size:13px;color:#185FA5;font-weight:500">${tots.inMW} MW</div>
+    </div>
+    <div style="background:#E2F2EC;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:11px;font-weight:600;color:#0F6E56;margin-bottom:4px">TOTAL OUTGOINGS</div>
+      <div style="font-size:20px;font-weight:700;color:#0F6E56">${tots.outAmps} A</div>
+      <div style="font-size:13px;color:#0F6E56;font-weight:500">${tots.outMW} MW</div>
+    </div>
+  </div>
+
+  <!-- Feeder list -->
+  <div class="card" style="margin-bottom:12px;padding:0;overflow:hidden">
+    <div style="padding:10px 14px;background:var(--color-background-secondary);border-bottom:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:space-between">
+      <div class="sl" style="margin-bottom:0">${s} — ${SESSION_BATCH[0].date} @ ${SESSION_BATCH[0].time}</div>
+      <span style="font-size:11px;color:var(--color-text-secondary)">${SESSION_BATCH.length} feeder${SESSION_BATCH.length!==1?'s':''}</span>
+    </div>
+    <div style="overflow-x:auto">
+      <table>
+        <thead><tr>
+          <th>Feeder</th><th>Type</th><th>kV</th>
+          <th>IR</th><th>IY</th><th>IB</th>
+          <th>Imax</th><th>MW</th>
+          <th>TAP</th><th>OT°C</th><th>WT°C</th>
+          <th>Remarks</th><th></th>
+        </tr></thead>
+        <tbody>
+          ${SESSION_BATCH.map((e,i)=>{
+            const tcolor=is33(e)?'#0C447C':'#0F6E56';
+            return`<tr style="${rowColor(e)}">
+              <td style="white-space:nowrap"><span class="badge bb">${e.feeder}</span></td>
+              <td style="font-size:10px;color:${tcolor};font-weight:600;white-space:nowrap">${fTypeLabel(e)}</td>
+              <td>${e.kv!=null?e.kv:'—'}</td>
+              <td>${e.ir}</td><td>${e.iy}</td><td>${e.ib}</td>
+              <td style="font-weight:700">${e.imax}</td>
+              <td style="font-weight:700;color:#185FA5">${e.mw!=null?e.mw:'—'}</td>
+              <td>${e.tap!=null?e.tap:'—'}</td>
+              <td>${e.oiltemp!=null?e.oiltemp:'—'}</td>
+              <td>${e.windtemp!=null?e.windtemp:'—'}</td>
+              <td style="font-size:11px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.remarks||'—'}</td>
+              <td><button class="bs bd" onclick="removeBatchEntry(${i})" title="Remove">x</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Action buttons -->
+  <div style="display:flex;gap:10px">
+    <button class="bs" style="flex:1;padding:11px" onclick="goBackToForm()">
+      &larr; Back &amp; add more
+    </button>
+    <button class="bp" id="btn-send-all" style="flex:2;padding:11px;font-size:14px;font-weight:600" onclick="sendBatch()">
+      Send All ${SESSION_BATCH.length} Entr${SESSION_BATCH.length!==1?'ies':'y'} to Google Sheet
+    </button>
+  </div>
+  </div>`);
+}
+
+function removeBatchEntry(idx){
+  SESSION_BATCH.splice(idx,1);
+  if(SESSION_BATCH.length===0){showForm();return;}
+  showSummary();
+}
+
+function goBackToForm(){
+  if(!SESSION_BATCH.length){showForm();return;}
+  const s=SESSION_BATCH[0].sub;
+  showForm();
+  setTimeout(()=>{
+    const fsEl=g('fs');
+    if(fsEl)fsEl.value=s;
+    onSub();
+  },150);
+}
+
+async function sendBatch(){
+  if(!SESSION_BATCH.length)return;
+  const btn=g('btn-send-all');
+  if(btn){btn.disabled=true;btn.innerHTML='Uploading…';}
+
+  let ok=0,fail=0;
+  for(const entry of SESSION_BATCH){
+    // Save to local DB
+    entry.pending=false;
+    DB.submissions.push(entry);
+  }
+  save();
+
+  // Upload all entries
+  if(navigator.onLine){
+    for(const entry of SESSION_BATCH){
+      try{
+        await uploadEntry(entry);
+        entry.synced=true;
+        ok++;
+      }catch(e){fail++;}
+    }
+    save();
+  }else{
+    fail=SESSION_BATCH.length;
+  }
+
+  const tots=computeTotals(SESSION_BATCH);
+  const batchCopy=[...SESSION_BATCH];
+  SESSION_BATCH=[];
+  BATCH_TIME=null;
+  BATCH_SUB=null;
+  BATCH_NEXT_FEEDER=null;
+
+  // Show completion screen
+  mount(`<div style="max-width:540px;margin:0 auto;padding:1rem">
+  ${topbar('Submission complete')}
+  <div class="card" style="text-align:center;padding:2rem 1.5rem;margin-bottom:12px">
+    <div style="font-size:48px;margin-bottom:8px">${fail===0?'✓':'!'}</div>
+    <div style="font-size:17px;font-weight:600;margin-bottom:4px">${fail===0?`All ${batchCopy.length} entries sent successfully`:`${ok} sent, ${fail} saved locally`}</div>
+    <div style="font-size:12px;color:var(--color-text-secondary);margin-top:4px">${batchCopy[0]?.sub||''} — ${batchCopy[0]?.date||''} @ ${batchCopy[0]?.time||''}</div>
+    ${fail>0?`<div style="font-size:11px;color:var(--color-text-warning);margin-top:6px">${fail} entr${fail!==1?'ies':'y'} saved locally — will auto-upload when internet returns</div>`:''}
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+    <div style="background:#E6F1FB;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:11px;font-weight:600;color:#0C447C;margin-bottom:4px">TOTAL INCOMERS</div>
+      <div style="font-size:20px;font-weight:700;color:#0C447C">${tots.inAmps} A</div>
+      <div style="font-size:13px;color:#185FA5;font-weight:500">${tots.inMW} MW</div>
+    </div>
+    <div style="background:#E2F2EC;border-radius:8px;padding:12px;text-align:center">
+      <div style="font-size:11px;font-weight:600;color:#0F6E56;margin-bottom:4px">TOTAL OUTGOINGS</div>
+      <div style="font-size:20px;font-weight:700;color:#0F6E56">${tots.outAmps} A</div>
+      <div style="font-size:13px;color:#0F6E56;font-weight:500">${tots.outMW} MW</div>
+    </div>
+  </div>
+  <div style="display:flex;gap:8px">
+    <button class="bp" style="flex:1;padding:11px" onclick="SESSION_BATCH=[];BATCH_TIME=null;BATCH_SUB=null;BATCH_NEXT_FEEDER=null;showForm()">New session</button>
+    <button class="bs" style="flex:1;padding:11px" onclick="showHistory()">View history</button>
+  </div>
+  </div>`);
 }
 
 
