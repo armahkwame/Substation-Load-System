@@ -935,7 +935,7 @@ function renderFeederFields(feeder){
       <div class="r2">${readOnly('fimax','Imax (A)')}${readOnly('fmw','MW')}</div>
     </div>`;
   } else if(type==='33KV_OUT'){
-    const lastKV=latestKVFromBatch(v('fs'),'33KV')||latestKV(v('fs'),'33KV');
+    const lastKV=latestKVFromBatch(v('fs'),'33KV');
     ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #185FA5">
       <div class="sl" style="color:#185FA5">33KV Outgoing — ${feeder}</div>
       ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest incomer KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No incomer KV in batch yet — MW will be calculated at summary using the incomer KV</div>'}
@@ -970,7 +970,7 @@ function renderFeederFields(feeder){
       </div>
     </div>`;
   } else if(type==='11KV_OUT'){
-    const lastKV=latestKVFromBatch(v('fs'),'11KV')||latestKV(v('fs'),'11KV');
+    const lastKV=latestKVFromBatch(v('fs'),'11KV');
     ff.innerHTML=`<div class="card" style="margin-bottom:10px;border-left:3px solid #0F6E56">
       <div class="sl" style="color:#0F6E56">11KV Outgoing — ${feeder}</div>
       ${lastKV?`<div style="font-size:11px;color:var(--color-text-secondary);margin-bottom:8px;padding:4px 8px;background:var(--color-background-info);border-radius:var(--border-radius-md)">Using latest TRAFO KV: <strong>${lastKV} kV</strong></div>`:'<div style="font-size:11px;color:var(--color-text-warning);margin-bottom:8px;padding:4px 8px;background:var(--color-background-warning);border-radius:var(--border-radius-md)">⚠ No TRAFO KV in batch yet — MW will be calculated at summary using the TRAFO KV</div>'}
@@ -994,9 +994,9 @@ function calcLive(){
   if(type==='33KV_INCOMER'||type==='11KV_TRAFO'){
     kv=parseFloat(v('fkv'))||null;
   } else if(type==='33KV_OUT'){
-    kv=latestKVFromBatch(v('fs'),'33KV')||latestKV(v('fs'),'33KV');
+    kv=latestKVFromBatch(v('fs'),'33KV');
   } else if(type==='11KV_OUT'){
-    kv=latestKVFromBatch(v('fs'),'11KV')||latestKV(v('fs'),'11KV');
+    kv=latestKVFromBatch(v('fs'),'11KV');
   }
   const mw=calcMW(kv,imax);
   if(mwEl)mwEl.value=kv&&imax?mw.toString():'—';
@@ -1085,8 +1085,8 @@ async function doSave(goNext){
   const imax=calcImax(+ir,+iy,+ib);
   let kvForMW=null;
   if(type==='33KV_INCOMER'||type==='11KV_TRAFO') kvForMW=parseFloat(kv)||null;
-  else if(type==='33KV_OUT') kvForMW=latestKVFromBatch(s,'33KV')||latestKV(s,'33KV');
-  else if(type==='11KV_OUT') kvForMW=latestKVFromBatch(s,'11KV')||latestKV(s,'11KV');
+  else if(type==='33KV_OUT') kvForMW=latestKVFromBatch(s,'33KV');
+  else if(type==='11KV_OUT') kvForMW=latestKVFromBatch(s,'11KV');
   const mw=calcMW(kvForMW,imax);
 
   const entry={
