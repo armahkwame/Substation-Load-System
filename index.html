@@ -521,20 +521,21 @@ function buildRow33(){
     if(f.type==='inc'){
       row[f.id+'_kv']=d.kv||'';
       row[f.id+'_mw']=d.mw||'';
-    }else{
-      // Outgoing MW using best incomer kV
-      const mw=calcMW(kv33,imax);
-      row[f.id+'_mw']=mw||'';
     }
+    // outgoing feeders: no individual MW — total MW calculated at end
   });
 
   // Totals
   const outgoings=F33.filter(f=>f.type!=='inc');
   const incomers=F33.filter(f=>f.type==='inc');
-  row.total_out_amps=outgoings.reduce((s,f)=>s+(BATCH[f.id]?.imax||0),0);
-  row.total_out_mw=+outgoings.reduce((s,f)=>s+(parseFloat(row[f.id+'_mw'])||0),0).toFixed(3);
-  row.total_inc_amps=incomers.reduce((s,f)=>s+(BATCH[f.id]?.imax||0),0);
-  row.total_inc_mw=+incomers.reduce((s,f)=>s+(parseFloat(BATCH[f.id]?.mw)||0),0).toFixed(3);
+  const totalOutAmps=outgoings.reduce((s,f)=>s+(BATCH[f.id]?.imax||0),0);
+  const totalOutMW=calcMW(kv33,totalOutAmps)||0;
+  const totalIncAmps=incomers.reduce((s,f)=>s+(BATCH[f.id]?.imax||0),0);
+  const totalIncMW=+incomers.reduce((s,f)=>s+(parseFloat(BATCH[f.id]?.mw)||0),0).toFixed(3);
+  row.total_out_amps=totalOutAmps;
+  row.total_out_mw=totalOutMW;
+  row.total_inc_amps=totalIncAmps;
+  row.total_inc_mw=totalIncMW;
   return row;
 }
 
@@ -632,7 +633,7 @@ function showSummary(){
         ${MODE==='33'?`<td>${isInc?d.kv:'—'}</td>`:''}
         <td>${d.r}</td><td>${d.y}</td><td>${d.b}</td>
         <td style="font-weight:700">${d.imax}</td>
-        <td style="font-weight:700;color:${color}">${mw||'—'}</td>
+        <td style="font-weight:700;color:${color}">${(isInc||isTrafo)?(mw||'—'):'—'}</td>
         ${MODE==='11'?`<td>${d.tap||'—'}</td><td>${d.ot||'—'}</td><td>${d.wt||'—'}</td>`:''}
       </tr>`;
     }).join('')}
@@ -812,7 +813,7 @@ function exportAllCSV(){
   const rows=DB.reports||[];
   if(!rows.length){showToast(false,'No data to export.');return;}
   // Dynamic CSV: all keys from first row
-  const keys33=['district','substation','date','time',...F33.flatMap(f=>f.type==='inc'?[f.id+'_kv',f.id+'_r',f.id+'_y',f.id+'_b',f.id+'_imax',f.id+'_mw']:[f.id+'_r',f.id+'_y',f.id+'_b',f.id+'_imax',f.id+'_mw']),'total_out_amps','total_out_mw','total_inc_amps','total_inc_mw'];
+  const keys33=['district','substation','date','time',...F33.flatMap(f=>f.type==='inc'?[f.id+'_kv',f.id+'_r',f.id+'_y',f.id+'_b',f.id+'_imax',f.id+'_mw']:[f.id+'_r',f.id+'_y',f.id+'_b',f.id+'_imax']),'total_out_amps','total_out_mw','total_inc_amps','total_inc_mw'];
   const keys11=['district','substation','date','time',...F11.flatMap(f=>f.type==='trafo'?[f.id+'_kv',f.id+'_r',f.id+'_y',f.id+'_b',f.id+'_imax',f.id+'_mw',f.id+'_tap',f.id+'_ot',f.id+'_wt']:[f.id+'_r',f.id+'_y',f.id+'_b',f.id+'_imax',f.id+'_mw']),'total_out_amps','total_out_mw','total_trafo_amps','total_trafo_mw'];
   ['33','11'].forEach(mode=>{
     const mRows=rows.filter(r=>r.mode===mode);
